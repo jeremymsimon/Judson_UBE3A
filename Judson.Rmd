@@ -6,7 +6,7 @@ output: github_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE,fig.path="./Figures/")
+knitr::opts_chunk$set(echo = TRUE,fig.path="./Figures/")
 ```
 
 ## Judson et al. 2020 (in preparation)
