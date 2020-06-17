@@ -1,7 +1,4 @@
 ---
-title: "Judson_UBE3A"
-author: "Jeremy M. Simon"
-date: "6/17/2020"
 output: github_document
 ---
 
@@ -25,7 +22,7 @@ Isoform fractions were then computed as Short/(Short+Long) or Long/(Short+Long) 
 
 Human RNA-seq data summarized to exons were obtained from [BrainSpan](http://www.brainspan.org/static/download.html), and filtered for UBE3A exons as annotated by [Gencode v10](https://www.gencodegenes.org/human/release_10.html). 
 
-Expression values were then averaged over developmental epochs for each exon and broader brain area. 
+Expression values were then averaged over developmental epochs for each exon and broader brain area. Note that some brain regions are only sampled from a small subset of developmental timepoints.
 
 Epochs were defined as: 
 
