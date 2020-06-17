@@ -51,12 +51,29 @@ Error bars for human RNA-seq data represent the 95% confidence intervals from 10
 
 ## Load packages 
 
-```{r}
+```
 library(vctrs)
 library(rsample)
 library(tidyverse)
 library(magrittr)
 library(patchwork)
+```
+
+```{r echo=FALSE}
+library(crayon,lib="/proj/jmsimon/Rlibs36")
+library(vctrs,lib="/proj/jmsimon/Rlibs36")
+library(backports,lib="/proj/jmsimon/Rlibs36")
+library(rstudioapi,lib="/proj/jmsimon/Rlibs36")
+library(cli,lib="/proj/jmsimon/Rlibs36")
+library(withr,lib="/proj/jmsimon/Rlibs36")
+library(tidyverse,lib="/proj/jmsimon/Rlibs36")
+library(magrittr,lib="/proj/jmsimon/Rlibs36")
+library(patchwork,lib="/proj/jmsimon/Rlibs36")
+library(labeling,lib="/proj/jmsimon/Rlibs36")
+library(farver,lib="/proj/jmsimon/Rlibs36")
+library(digest,lib="/proj/jmsimon/Rlibs36")
+library(utf8,lib="/proj/jmsimon/Rlibs36")
+library(rsample,lib="/proj/jmsimon/Rlibs36")
 ```
 
 ## Read in human data
@@ -94,7 +111,7 @@ We have also subset the expression matrix to contain just these UBE3A exons, suc
 
 Now we can read in the data and begin to tidy:
 
-```{r}
+```{r import}
 exp = read_csv("expression_matrix_UBE3A.csv",col_names = c("ExonID",seq(1:524)))
 rows = read_tsv("rows_metadata_UBE3A_lookup.txt",col_names=c("ExonID","Name"))
 exp_joined = full_join(rows,exp,by="ExonID")
@@ -111,7 +128,7 @@ exp_longer$column_num %<>% as.integer
 
 Next we can annotate the ages as each of the developmental epochs we defined above
 
-```{r}
+```{r tidy}
 joined = full_join(cols,exp_longer,by="column_num")  %>%
 	mutate(
 		Epoch = case_when(
@@ -134,16 +151,17 @@ Then we manually set the order that these ages and epochs should appear in figur
 order = c("8_pcw","9_pcw","12_pcw","13_pcw","16_pcw","17_pcw","19_pcw","21_pcw","24_pcw","25_pcw","26_pcw","35_pcw","37_pcw","4_mos","10_mos","1_yrs","2_yrs","3_yrs","4_yrs","8_yrs","11_yrs","13_yrs","15_yrs","18_yrs","19_yrs","21_yrs","23_yrs","30_yrs","36_yrs","37_yrs","40_yrs")
 epoch_order = c("FirstTri","SecondTri","ThirdTri","EarlyPost","EarlyChild","Adolescent","Adult")
 dodge = position_dodge(width=0.9)
+nboot=100
 ```
 
 ### Summarize and plot data for whole brain
 
-```{r}
+```{r WholeBrain}
 wholebrain_perm = joined %>% 
  	mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
 	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>%
 	group_by(Epoch,Name) %>%
-	bootstraps(times=10000)
+	bootstraps(times=nboot)
 
 wholebrain_err = map_dfr(wholebrain_perm$splits,
 	function(x) {
@@ -189,13 +207,13 @@ wholebrain = full_join(wholebrain_obs,wholebrain_err) %>%
 
 ### Summarize and plot data for Hippocampus
 
-```{r}
+```{r Hippocampus}
 hip_perm = joined %>% 
 	filter(structure_acronym=="HIP") %>%
  	mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
 	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>%
 	group_by(Epoch,Name) %>%
-	bootstraps(times=10000)
+	bootstraps(times=nboot)
 
 hip_err = map_dfr(hip_perm$splits,
 	function(x) {
@@ -241,13 +259,13 @@ hip = full_join(hip_obs,hip_err) %>%
 
 ### Summarize and plot data for Prefrontal cortex
 
-```{r}
+```{r PFC}
 pfc_perm = joined %>% 
 	filter(structure_acronym=="DFC" | structure_acronym=="VFC" | structure_acronym=="MFC" | structure_acronym=="OFC") %>%
  	mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
 	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>%
 	group_by(Epoch,Name) %>%
-	bootstraps(times=10000)
+	bootstraps(times=nboot)
 
 pfc_err = map_dfr(pfc_perm$splits,
 	function(x) {
@@ -294,13 +312,13 @@ pfc = full_join(pfc_obs,pfc_err) %>%
 
 ### Summarize and plot data for Sensory cortex
 
-```{r}
+```{r Sensory}
 sensory_perm = joined %>% 
 	filter(structure_acronym=="S1C" | structure_acronym=="A1C" | structure_acronym=="M1C" | structure_acronym=="M1C-S1C") %>%
  	mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
 	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>%
 	group_by(Epoch,Name) %>%
-	bootstraps(times=10000)
+	bootstraps(times=nboot)
 
 sensory_err = map_dfr(sensory_perm$splits,
 	function(x) {
@@ -346,13 +364,13 @@ sensory = full_join(sensory_obs,sensory_err) %>%
 
 ### Summarize and plot data for Cerebellum
 
-```{r}
+```{r Cerebellum}
 cbm_perm = joined %>% 
 	filter(structure_acronym=="CB" | structure_acronym=="CBC") %>%
  	mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
 	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>%
 	group_by(Epoch,Name) %>%
-	bootstraps(times=10000)
+	bootstraps(times=nboot)
 
 cbm_err = map_dfr(cbm_perm$splits,
 	function(x) {
@@ -398,13 +416,13 @@ cbm = full_join(cbm_obs,cbm_err) %>%
 
 ### Summarize and plot data for Thalamus
 
-```{r}
+```{r Thalamus}
 thalamus_perm = joined %>% 
 	filter(structure_acronym=="DTH" | structure_acronym=="MD") %>%
  	mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
 	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>%
 	group_by(Epoch,Name) %>%
-	bootstraps(times=10000)
+	bootstraps(times=nboot)
 
 thalamus_err = map_dfr(thalamus_perm$splits,
 	function(x) {
@@ -450,13 +468,13 @@ thalamus = full_join(thalamus_obs,thalamus_err) %>%
 
 ### Write out all summary plots to one figure using patchwork
 
-```{r}
+```{r Fig1}
 (hip+pfc+sensory)/(cbm+thalamus+wholebrain)
 ```
 
 ### Plot all individual brain regions and timepoints as boxplots for supplementary material
 
-```{r}
+```{r Fig2}
 left = joined %>% 
 	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>% 
 	select(-ExonID) %>%
