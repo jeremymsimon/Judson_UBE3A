@@ -468,13 +468,13 @@ thalamus = full_join(thalamus_obs,thalamus_err) %>%
 
 ### Write out all summary plots to one figure using patchwork
 
-```{r, out.width="85%"}
+```{r, fig.width=12}
 (hip+pfc+sensory)/(cbm+thalamus+wholebrain)
 ```
 
 ### Plot all individual brain regions and timepoints as boxplots for supplementary material
 
-```{r, out.width="85%"}
+```{r, fig.width=12,fig.height=12}
 left = joined %>% 
 	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>% 
 	select(-ExonID) %>%

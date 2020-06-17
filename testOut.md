@@ -527,7 +527,7 @@ thalamus = full_join(thalamus_obs,thalamus_err) %>%
 (hip+pfc+sensory)/(cbm+thalamus+wholebrain)
 ```
 
-<img src="figure/unnamed-chunk-3-1.png" title="plot of chunk unnamed-chunk-3" alt="plot of chunk unnamed-chunk-3" width="85%" />
+![plot of chunk unnamed-chunk-3](figure/unnamed-chunk-3-1.png)
 
 ### Plot all individual brain regions and timepoints as boxplots for supplementary material
 
@@ -591,7 +591,7 @@ AAAAAAABB
 left + right + plot_layout(design=layout,heights=c(1,0.8244),guides = 'collect')
 ```
 
-<img src="figure/unnamed-chunk-4-1.png" title="plot of chunk unnamed-chunk-4" alt="plot of chunk unnamed-chunk-4" width="85%" />
+![plot of chunk unnamed-chunk-4](figure/unnamed-chunk-4-1.png)
 
 ```r
 # Note 0.8244 is a magic scaling factor here such that the y axis values and lines are aligned exactly
