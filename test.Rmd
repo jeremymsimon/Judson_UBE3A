@@ -47,21 +47,473 @@ Brain areas were defined as:
 
 Isoform fractions were then calculated by taking signal from exons corresponding to start sites of isoform 1 (short; chr15:25620611-25620910 and chr15:25652213-25652284), isoform 2 (long; chr15:25653766-25653795), and isoform 3 (long; chr15:25654234-25654354) and computed as Short/(Short+Long) or Long/(Short+Long) in R, as demonstrated here. 
 
-Error bars for human RNA-seq data represent the 95% confidence intervals from 10,000 bootstrap samples of the data with replacement, and were computed in `R` using the [`rsample`](https://cran.r-project.org/web/packages/rsample/index.html) package. Plots were generated in R version 3.5 and plotted with ggplot2
+Error bars for human RNA-seq data represent the 95% confidence intervals from 10,000 bootstrap samples of the data with replacement, and were computed in `R` using the [`rsample`](https://cran.r-project.org/web/packages/rsample/index.html) package. Plots were generated in `R` version 3.5 and plotted with `ggplot2`
 
- 
+## Load packages 
 
-```{r cars}
-summary(cars)
+```{r}
+library(vctrs)
+library(rsample)
+library(tidyverse)
+library(magrittr)
+library(patchwork)
 ```
 
-## Including Plots
+## Read in human data
 
-You can also embed plots, for example:
+The data from BrainSpan come as a set of 3 files:
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+* expression_matrix.csv -- the rows are genes and the columns samples; the first column is the row number
+* rows_metadata.csv -- the exons are listed in the same order as the rows in expression_matrix.csv
+* columns_metadata.csv -- the samples are listed in the same order as the columns in expression_matrix.csv
+
+Here we have created a lookup table to annotate the UBE3A exons based on their coordinates as follows:
+
+`rows_metadata_UBE3A_lookup.txt`
+
+```
+65047	UBE3A_chr15_25582380_25584404
+65048	UBE3A_chr15_25585231_25585375
+65049	UBE3A_chr15_25599499_25599573
+65050	UBE3A_chr15_25599674_25599830
+65051	UBE3A_chr15_25601038_25601203
+65052	UBE3A_chr15_25601837_25602043
+65053	UBE3A_chr15_25605529_25605674
+65054	UBE3A_chr15_25615712_25616959
+65055	UBE3A_chr15_25620611_25620910
+65056	UBE3A_chr15_25650607_25650653
+65057	UBE3A_chr15_25652213_25652284
+65058	UBE3A_chr15_25653766_25653795
+65059	UBE3A_chr15_25654234_25654354
+65060	UBE3A_chr15_25657054_25657118
+65061	UBE3A_chr15_25658157_25658175
+65062	UBE3A_chr15_25683635_25684128
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+We have also subset the expression matrix to contain just these UBE3A exons, such that `expression_matrix_UBE3A.csv` contains only exons 65047-65062.
+
+Now we can read in the data and begin to tidy:
+
+```{r}
+exp = read_csv("expression_matrix_UBE3A.csv",col_names = c("ExonID",seq(1:524)))
+rows = read_tsv("rows_metadata_UBE3A_lookup.txt",col_names=c("ExonID","Name"))
+exp_joined = full_join(rows,exp,by="ExonID")
+
+cols = read_csv("columns_metadata.csv") %>% 
+	mutate(age=str_replace_all(age," ","_")) %>% 
+	select(c(column_num,donor_id,age,gender,structure_acronym))
+
+exp_longer = exp_joined %>% 
+	pivot_longer(3:dim(exp_joined)[2],names_to="column_num",values_to="Expression")
+
+exp_longer$column_num %<>% as.integer
+```
+
+Next we can annotate the ages as each of the developmental epochs we defined above
+
+```{r}
+joined = full_join(cols,exp_longer,by="column_num")  %>%
+	mutate(
+		Epoch = case_when(
+			age=="8_pcw" | age=="9_pcw" | age=="12_pcw" | age=="13_pcw" ~ "FirstTri",
+			age=="16_pcw" | age=="17_pcw" | age=="19_pcw" | age=="21_pcw" | age=="24_pcw" | age=="25_pcw" ~ "SecondTri",
+			age=="26_pcw" | age=="35_pcw" | age=="37_pcw" ~ "ThirdTri",
+			age=="4_mos" | age=="10_mos" | age=="1_yrs" | age=="2_yrs" ~ "EarlyPost",
+			age=="3_yrs" | age=="4_yrs" | age=="8_yrs" | age=="11_yrs" ~ "EarlyChild",
+			age=="13_yrs" | age=="15_yrs" | age=="18_yrs" | age=="19_yrs" ~ "Adolescent",
+			age=="19_yrs" | age=="21_yrs" | age=="23_yrs" | age=="30_yrs" | age=="36_yrs" | age=="37_yrs" | age=="40_yrs" ~ "Adult",
+			T ~ "else"
+			)
+		)
+
+```
+
+Then we manually set the order that these ages and epochs should appear in figures, and set a default jitter width
+
+```{r}
+order = c("8_pcw","9_pcw","12_pcw","13_pcw","16_pcw","17_pcw","19_pcw","21_pcw","24_pcw","25_pcw","26_pcw","35_pcw","37_pcw","4_mos","10_mos","1_yrs","2_yrs","3_yrs","4_yrs","8_yrs","11_yrs","13_yrs","15_yrs","18_yrs","19_yrs","21_yrs","23_yrs","30_yrs","36_yrs","37_yrs","40_yrs")
+epoch_order = c("FirstTri","SecondTri","ThirdTri","EarlyPost","EarlyChild","Adolescent","Adult")
+dodge = position_dodge(width=0.9)
+```
+
+### Summarize and plot data for whole brain
+
+```{r}
+wholebrain_perm = joined %>% 
+ 	mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
+	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>%
+	group_by(Epoch,Name) %>%
+	bootstraps(times=10000)
+
+wholebrain_err = map_dfr(wholebrain_perm$splits,
+	function(x) {
+		as_tibble(x) %>% 
+        group_by(Epoch,Name) %>%
+		summarize(MeanExp = mean(Expression)) %>% 
+     	pivot_wider(names_from=Name,values_from = MeanExp) %>%
+		mutate(Ratio1_short = (UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284)/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+		mutate(Ratio2_long1 = UBE3A_chr15_25653766_25653795/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+		mutate(Ratio3_long2 = UBE3A_chr15_25654234_25654354/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+		select(Epoch,starts_with("Ratio")) %>%
+		pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))   	
+    }) %>%
+    group_by(Epoch,Category) %>%
+    summarize(ratio.q025 = quantile(Ratio,0.025,na.rm=T), ratio.q975 = quantile(Ratio,0.975,na.rm=T))
+
+wholebrain_obs = joined %>% 
+ 	mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
+	group_by(Epoch,Name) %>% 
+	summarize(MeanExp = mean(Expression)) %>% 
+	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>%
+	pivot_wider(names_from=Name,values_from = MeanExp) %>%
+	mutate(Ratio1_short = (UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284)/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	mutate(Ratio2_long1 = UBE3A_chr15_25653766_25653795/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	mutate(Ratio3_long2 = UBE3A_chr15_25654234_25654354/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	select(Epoch,starts_with("Ratio")) %>%
+	pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))
+
+wholebrain = full_join(wholebrain_obs,wholebrain_err) %>%
+	ggplot(aes(x=Epoch,y=Ratio,fill=Category)) + 
+	geom_col(position=dodge) +			# Take away position parameter to default to stacked bars
+	geom_errorbar(aes(ymin=ratio.q025,ymax=ratio.q975),width=0.2,position=dodge) +	
+	scale_x_discrete(limits = epoch_order) + 
+	theme_classic() + 
+	theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+	xlab("Donor age") +
+	ylab("Fraction UBE3A isoform") +
+	ylim(0,1) +
+	ggtitle("Whole brain") +
+	scale_fill_manual("legend", values = c("Ratio1_short" = "#9A2C06", "Ratio2_long1" = "#2A9A06", "Ratio3_long2" = "#06749A"))
+
+```
+
+### Summarize and plot data for Hippocampus
+
+```{r}
+hip_perm = joined %>% 
+	filter(structure_acronym=="HIP") %>%
+ 	mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
+	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>%
+	group_by(Epoch,Name) %>%
+	bootstraps(times=10000)
+
+hip_err = map_dfr(hip_perm$splits,
+	function(x) {
+		as_tibble(x) %>% 
+        group_by(Epoch,Name) %>%
+		summarize(MeanExp = mean(Expression)) %>% 
+     	pivot_wider(names_from=Name,values_from = MeanExp) %>%
+		mutate(Ratio1_short = (UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284)/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+		mutate(Ratio2_long1 = UBE3A_chr15_25653766_25653795/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+		mutate(Ratio3_long2 = UBE3A_chr15_25654234_25654354/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+		select(Epoch,starts_with("Ratio")) %>%
+		pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))   	
+    }) %>%
+    group_by(Epoch,Category) %>%
+    summarize(ratio.q025 = quantile(Ratio,0.025,na.rm=T), ratio.q975 = quantile(Ratio,0.975,na.rm=T))
+
+hip_obs = joined %>% 
+	filter(structure_acronym=="HIP") %>%
+ 	mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
+	group_by(Epoch,Name) %>% 
+	summarize(MeanExp = mean(Expression)) %>% 
+	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>%
+	pivot_wider(names_from=Name,values_from = MeanExp) %>%
+	mutate(Ratio1_short = (UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284)/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	mutate(Ratio2_long1 = UBE3A_chr15_25653766_25653795/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	mutate(Ratio3_long2 = UBE3A_chr15_25654234_25654354/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	select(Epoch,starts_with("Ratio")) %>%
+	pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))
+
+hip = full_join(hip_obs,hip_err) %>%
+	ggplot(aes(x=Epoch,y=Ratio,fill=Category)) + 
+	geom_col(position=dodge) +			# Take away position parameter to default to stacked bars
+	geom_errorbar(aes(ymin=ratio.q025,ymax=ratio.q975),width=0.2,position=dodge) +	
+	scale_x_discrete(limits = epoch_order) + 
+	theme_classic() + 
+	theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+	xlab("Donor age") +
+	ylab("Fraction UBE3A isoform") +
+	ylim(0,1) +
+	ggtitle("Hippocampus") +
+	scale_fill_manual("legend", values = c("Ratio1_short" = "#9A2C06", "Ratio2_long1" = "#2A9A06", "Ratio3_long2" = "#06749A"))
+```
+
+### Summarize and plot data for Prefrontal cortex
+
+```{r}
+pfc_perm = joined %>% 
+	filter(structure_acronym=="DFC" | structure_acronym=="VFC" | structure_acronym=="MFC" | structure_acronym=="OFC") %>%
+ 	mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
+	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>%
+	group_by(Epoch,Name) %>%
+	bootstraps(times=10000)
+
+pfc_err = map_dfr(pfc_perm$splits,
+	function(x) {
+		as_tibble(x) %>% 
+        group_by(Epoch,Name) %>%
+		summarize(MeanExp = mean(Expression)) %>% 
+     	pivot_wider(names_from=Name,values_from = MeanExp) %>%
+		mutate(Ratio1_short = (UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284)/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+		mutate(Ratio2_long1 = UBE3A_chr15_25653766_25653795/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+		mutate(Ratio3_long2 = UBE3A_chr15_25654234_25654354/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+		select(Epoch,starts_with("Ratio")) %>%
+		pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))   	
+    }) %>%
+    group_by(Epoch,Category) %>%
+    summarize(ratio.q025 = quantile(Ratio,0.025,na.rm=T), ratio.q975 = quantile(Ratio,0.975,na.rm=T))
+
+pfc_obs = joined %>% 
+	filter(structure_acronym=="DFC" | structure_acronym=="VFC" | structure_acronym=="MFC" | structure_acronym=="OFC") %>%
+ 	mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
+	group_by(Epoch,Name) %>% 
+	summarize(MeanExp = mean(Expression)) %>% 
+	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>%
+	pivot_wider(names_from=Name,values_from = MeanExp) %>%
+	mutate(Ratio1_short = (UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284)/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	mutate(Ratio2_long1 = UBE3A_chr15_25653766_25653795/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	mutate(Ratio3_long2 = UBE3A_chr15_25654234_25654354/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	select(Epoch,starts_with("Ratio")) %>%
+	pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))
+
+pfc = full_join(pfc_obs,pfc_err) %>%
+	ggplot(aes(x=Epoch,y=Ratio,fill=Category)) + 
+	geom_col(position=dodge) +			# Take away position parameter to default to stacked bars
+	geom_errorbar(aes(ymin=ratio.q025,ymax=ratio.q975),width=0.2,position=dodge) +	
+	scale_x_discrete(limits = epoch_order) + 
+	theme_classic() + 
+	theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+	xlab("Donor age") +
+	ylab("Fraction UBE3A isoform") +
+	ylim(0,1) +
+	ggtitle("Prefrontal cortex") +
+	scale_fill_manual("legend", values = c("Ratio1_short" = "#9A2C06", "Ratio2_long1" = "#2A9A06", "Ratio3_long2" = "#06749A"))
+
+```
+
+### Summarize and plot data for Sensory cortex
+
+```{r}
+sensory_perm = joined %>% 
+	filter(structure_acronym=="S1C" | structure_acronym=="A1C" | structure_acronym=="M1C" | structure_acronym=="M1C-S1C") %>%
+ 	mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
+	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>%
+	group_by(Epoch,Name) %>%
+	bootstraps(times=10000)
+
+sensory_err = map_dfr(sensory_perm$splits,
+	function(x) {
+		as_tibble(x) %>% 
+        group_by(Epoch,Name) %>%
+		summarize(MeanExp = mean(Expression)) %>% 
+     	pivot_wider(names_from=Name,values_from = MeanExp) %>%
+		mutate(Ratio1_short = (UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284)/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+		mutate(Ratio2_long1 = UBE3A_chr15_25653766_25653795/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+		mutate(Ratio3_long2 = UBE3A_chr15_25654234_25654354/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+		select(Epoch,starts_with("Ratio")) %>%
+		pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))   	
+    }) %>%
+    group_by(Epoch,Category) %>%
+    summarize(ratio.q025 = quantile(Ratio,0.025,na.rm=T), ratio.q975 = quantile(Ratio,0.975,na.rm=T))
+
+sensory_obs = joined %>% 
+	filter(structure_acronym=="S1C" | structure_acronym=="A1C" | structure_acronym=="M1C" | structure_acronym=="M1C-S1C") %>%
+ 	mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
+	group_by(Epoch,Name) %>% 
+	summarize(MeanExp = mean(Expression)) %>% 
+	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>%
+	pivot_wider(names_from=Name,values_from = MeanExp) %>%
+	mutate(Ratio1_short = (UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284)/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	mutate(Ratio2_long1 = UBE3A_chr15_25653766_25653795/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	mutate(Ratio3_long2 = UBE3A_chr15_25654234_25654354/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	select(Epoch,starts_with("Ratio")) %>%
+	pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))
+
+sensory = full_join(sensory_obs,sensory_err) %>%
+	ggplot(aes(x=Epoch,y=Ratio,fill=Category)) + 
+	geom_col(position=dodge) +			# Take away position parameter to default to stacked bars
+	geom_errorbar(aes(ymin=ratio.q025,ymax=ratio.q975),width=0.2,position=dodge) +	
+	scale_x_discrete(limits = epoch_order) + 
+	theme_classic() + 
+	theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+	xlab("Donor age") +
+	ylab("Fraction UBE3A isoform") +
+	ylim(0,1) +
+	ggtitle("Sensory cortex") +
+	scale_fill_manual("legend", values = c("Ratio1_short" = "#9A2C06", "Ratio2_long1" = "#2A9A06", "Ratio3_long2" = "#06749A"))
+```
+
+### Summarize and plot data for Cerebellum
+
+```{r}
+cbm_perm = joined %>% 
+	filter(structure_acronym=="CB" | structure_acronym=="CBC") %>%
+ 	mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
+	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>%
+	group_by(Epoch,Name) %>%
+	bootstraps(times=10000)
+
+cbm_err = map_dfr(cbm_perm$splits,
+	function(x) {
+		as_tibble(x) %>% 
+        group_by(Epoch,Name) %>%
+		summarize(MeanExp = mean(Expression)) %>% 
+     	pivot_wider(names_from=Name,values_from = MeanExp) %>%
+		mutate(Ratio1_short = (UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284)/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+		mutate(Ratio2_long1 = UBE3A_chr15_25653766_25653795/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+		mutate(Ratio3_long2 = UBE3A_chr15_25654234_25654354/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+		select(Epoch,starts_with("Ratio")) %>%
+		pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))   	
+    }) %>%
+    group_by(Epoch,Category) %>%
+    summarize(ratio.q025 = quantile(Ratio,0.025,na.rm=T), ratio.q975 = quantile(Ratio,0.975,na.rm=T))
+
+cbm_obs = joined %>% 
+	filter(structure_acronym=="CB" | structure_acronym=="CBC") %>%
+ 	mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
+	group_by(Epoch,Name) %>% 
+	summarize(MeanExp = mean(Expression)) %>% 
+	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>%
+	pivot_wider(names_from=Name,values_from = MeanExp) %>%
+	mutate(Ratio1_short = (UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284)/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	mutate(Ratio2_long1 = UBE3A_chr15_25653766_25653795/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	mutate(Ratio3_long2 = UBE3A_chr15_25654234_25654354/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	select(Epoch,starts_with("Ratio")) %>%
+	pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))
+
+cbm = full_join(cbm_obs,cbm_err) %>%
+	ggplot(aes(x=Epoch,y=Ratio,fill=Category)) + 
+	geom_col(position=dodge) +			# Take away position parameter to default to stacked bars
+	geom_errorbar(aes(ymin=ratio.q025,ymax=ratio.q975),width=0.2,position=dodge) +	
+	scale_x_discrete(limits = epoch_order) + 
+	theme_classic() + 
+	theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+	xlab("Donor age") +
+	ylab("Fraction UBE3A isoform") +
+	ylim(0,1) +
+	ggtitle("Cerebellum") +
+	scale_fill_manual("legend", values = c("Ratio1_short" = "#9A2C06", "Ratio2_long1" = "#2A9A06", "Ratio3_long2" = "#06749A"))
+```
+
+### Summarize and plot data for Thalamus
+
+```{r}
+thalamus_perm = joined %>% 
+	filter(structure_acronym=="DTH" | structure_acronym=="MD") %>%
+ 	mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
+	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>%
+	group_by(Epoch,Name) %>%
+	bootstraps(times=10000)
+
+thalamus_err = map_dfr(thalamus_perm$splits,
+	function(x) {
+		as_tibble(x) %>% 
+        group_by(Epoch,Name) %>%
+		summarize(MeanExp = mean(Expression)) %>% 
+     	pivot_wider(names_from=Name,values_from = MeanExp) %>%
+		mutate(Ratio1_short = (UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284)/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+		mutate(Ratio2_long1 = UBE3A_chr15_25653766_25653795/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+		mutate(Ratio3_long2 = UBE3A_chr15_25654234_25654354/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+		select(Epoch,starts_with("Ratio")) %>%
+		pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))   	
+    }) %>%
+    group_by(Epoch,Category) %>%
+    summarize(ratio.q025 = quantile(Ratio,0.025,na.rm=T), ratio.q975 = quantile(Ratio,0.975,na.rm=T))
+
+thalamus_obs = joined %>% 
+	filter(structure_acronym=="DTH" | structure_acronym=="MD") %>%
+ 	mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
+	group_by(Epoch,Name) %>% 
+	summarize(MeanExp = mean(Expression)) %>% 
+	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>%
+	pivot_wider(names_from=Name,values_from = MeanExp) %>%
+	mutate(Ratio1_short = (UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284)/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	mutate(Ratio2_long1 = UBE3A_chr15_25653766_25653795/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	mutate(Ratio3_long2 = UBE3A_chr15_25654234_25654354/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	select(Epoch,starts_with("Ratio")) %>%
+	pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))
+
+thalamus = full_join(thalamus_obs,thalamus_err) %>%
+	ggplot(aes(x=Epoch,y=Ratio,fill=Category)) + 
+	geom_col(position=dodge) +			# Take away position parameter to default to stacked bars
+	geom_errorbar(aes(ymin=ratio.q025,ymax=ratio.q975),width=0.2,position=dodge) +	
+	scale_x_discrete(limits = epoch_order) + 
+	theme_classic() + 
+	theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+	xlab("Donor age") +
+	ylab("Fraction UBE3A isoform") +
+	ylim(0,1) +
+	ggtitle("Thalamus") +
+	scale_fill_manual("legend", values = c("Ratio1_short" = "#9A2C06", "Ratio2_long1" = "#2A9A06", "Ratio3_long2" = "#06749A"))
+```
+
+### Write out all summary plots to one figure using patchwork
+
+```{r}
+(hip+pfc+sensory)/(cbm+thalamus+wholebrain)
+```
+
+### Plot all individual brain regions and timepoints as boxplots for supplementary material
+
+```{r}
+left = joined %>% 
+	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>% 
+	select(-ExonID) %>%
+	pivot_wider(names_from=Name,values_from = Expression) %>% 
+	mutate(Ratio1_short = (UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284)/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	mutate(Ratio2_long1 = UBE3A_chr15_25653766_25653795/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	mutate(Ratio3_long2 = UBE3A_chr15_25654234_25654354/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	select(-starts_with("UBE3A")) %>%
+	pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio")) %>%
+	filter(structure_acronym == "A1C" | structure_acronym == "AMY" | structure_acronym == "CBC" | structure_acronym == "DFC" | structure_acronym == "HIP" | structure_acronym == "IPC" | structure_acronym == "ITC" | structure_acronym == "M1C" | structure_acronym == "MD" | structure_acronym == "MFC" | structure_acronym == "OFC" | structure_acronym == "S1C" | structure_acronym == "STC" | structure_acronym == "STR" | structure_acronym == "V1C" | structure_acronym == "VFC") %>%
+	arrange(desc(structure_acronym)) %>%
+	ggplot(aes(x=age,y=Ratio,fill=Category)) + 
+	geom_boxplot(aes(color=Category)) + 
+	facet_wrap(~structure_acronym,nrow=8,ncol=2,as.table=T, strip.position = "top",scales="free") + 
+	theme_minimal() + 
+	theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),legend.position = "none",strip.background = element_blank(), strip.placement = NULL,axis.line.x = element_line(colour = 'black', size=1, linetype='solid'),axis.line.y = element_line(colour = 'black', size=1, linetype='solid'),axis.ticks.x = element_line(colour = 'black', size=1, linetype='solid'),axis.ticks.y = element_line(colour = 'black', size=1, linetype='solid'),panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+	scale_x_discrete(limits = order) +
+	scale_fill_manual(values = c("Ratio1_short" = "#9A2C06", "Ratio2_long1" = "#2A9A06", "Ratio3_long2" = "#06749A")) +
+	scale_color_manual(values = c("Ratio1_short" = "#9A2C06", "Ratio2_long1" = "#2A9A06", "Ratio3_long2" = "#06749A")) +
+	ylim(0,1) +
+	ylab("Isoform Fraction")
+
+right = joined %>% 
+	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>% 
+	select(-ExonID) %>%
+	pivot_wider(names_from=Name,values_from = Expression) %>% 
+	mutate(Ratio1_short = (UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284)/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	mutate(Ratio2_long1 = UBE3A_chr15_25653766_25653795/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	mutate(Ratio3_long2 = UBE3A_chr15_25654234_25654354/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	select(-starts_with("UBE3A")) %>%
+	pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio")) %>%
+	filter(structure_acronym == "CB" | structure_acronym == "CGE" | structure_acronym == "DTH" | structure_acronym == "LGE" | structure_acronym == "M1C-S1C" | structure_acronym == "MGE" | structure_acronym == "Ocx" | structure_acronym == "PCx" | structure_acronym == "TCx" | structure_acronym == "URL") %>%
+	arrange(desc(structure_acronym)) %>%
+	ggplot(aes(x=age,y=Ratio,fill=Category)) + 
+	geom_boxplot(aes(color=Category)) + 
+	facet_wrap(~structure_acronym,nrow=5,ncol=2,as.table=T, strip.position = "top",scales="free") + 
+	theme_minimal() + 
+	theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),strip.background = element_blank(), strip.placement = NULL,axis.line.x = element_line(colour = 'black', size=1, linetype='solid'),axis.line.y = element_line(colour = 'black', size=1, linetype='solid'),axis.ticks.x = element_line(colour = 'black', size=1, linetype='solid'),axis.ticks.y = element_line(colour = 'black', size=1, linetype='solid'),panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+	scale_x_discrete(limits = order[1:15]) +
+	scale_fill_manual(values = c("Ratio1_short" = "#9A2C06", "Ratio2_long1" = "#2A9A06", "Ratio3_long2" = "#06749A")) +
+	scale_color_manual(values = c("Ratio1_short" = "#9A2C06", "Ratio2_long1" = "#2A9A06", "Ratio3_long2" = "#06749A")) +
+	ylim(0,1) +
+	ylab("")
+
+layout <- "
+AAAAAAA##
+AAAAAAA##
+AAAAAAA##
+AAAAAAABB
+AAAAAAABB
+AAAAAAABB
+AAAAAAABB
+AAAAAAABB
+"
+
+left + right + plot_layout(design=layout,heights=c(1,0.8244),guides = 'collect')
+# Note 0.8244 is a magic scaling factor here such that the y axis values and lines are aligned exactly
+```
+
 
