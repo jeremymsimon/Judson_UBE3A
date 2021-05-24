@@ -1,7 +1,7 @@
 ---
 Title: Judson_UBE3A
 Author: Jeremy M. Simon
-Date: 6/17/20
+Date: 5/24/21
 output: github_document
 ---
 
@@ -9,7 +9,7 @@ output: github_document
 knitr::opts_chunk$set(echo = TRUE,fig.path="./Figures/")
 ```
 
-## Judson et al. 2020 (in preparation)
+## Judson et al. 2021 (in preparation)
 
 This repository contains `R` code to generate some of the figures presented in Judson _et al._ 2020 (_in preparation_). 
 
@@ -19,9 +19,9 @@ Mouse ENCODE RNA-seq alignment bigWig files for developmental timepoints (E10.5 
 
 Alignment files corresponding to adult tissues were similarly downloaded for experiments ENCSR000BZM, ENCSR000BZR, and ENCSR000BZS for cerebellum, cortical plate, and frontal cortex, respectively. 
 
-Signal over exons corresponding to start sites of the short (chr7:59247173-59247217) and long (chr7:59243350-59243469) isoforms (mm10 reference) were tabulated using [deeptools multiBigwigSummary](https://deeptools.readthedocs.io/en/develop/content/tools/multiBigwigSummary.html). 
+Signal over exons corresponding to exons 3 and 4 (mm10 reference) were tabulated using [deeptools multiBigwigSummary](https://deeptools.readthedocs.io/en/develop/content/tools/multiBigwigSummary.html). 
 
-Isoform fractions were then computed as Short/(Short+Long) or Long/(Short+Long) in R, as demonstrated here. Error bars represent the standard deviation in isoform fraction.
+Isoform fractions were then computed in `R`, as demonstrated here. Error bars represent the standard deviation in isoform fraction.
 
 Human RNA-seq data summarized to exons were obtained from [BrainSpan](http://www.brainspan.org/static/download.html), and filtered for UBE3A exons as annotated by [Gencode v10](https://www.gencodegenes.org/human/release_10.html). 
 
@@ -45,7 +45,22 @@ Brain areas were defined as:
 * Cerebellum (CB, CBC)
 * Thalamus (DTH, MD) 
 
-Isoform fractions were then calculated by taking signal from exons corresponding to start sites of isoform 1 (short; chr15:25620611-25620910 and chr15:25652213-25652284), isoform 2 (long; chr15:25653766-25653795), and isoform 3 (long; chr15:25654234-25654354) and computed as Short/(Short+Long) or Long/(Short+Long) in R, as demonstrated here. 
+Signal from exons 3–7 were extracted as follows:
+```
+* exon7 = "UBE3A_chr15_25620611_25620910"		exon 7	encodes MKRAAAK
+* exon6 = "UBE3A_chr15_25650607_25650653"		exon 6	encodes SGEP...M
+* exon5 = "UBE3A_chr15_25652213_25652284"		exon 5	noncoding
+* exon4 = "UBE3A_chr15_25653766_25653795"		exon 4	note this is a shorter form of other exons here that may be annotated as longer, encodes MEKL
+* exon3 = "UBE3A_chr15_25654234_25654354"		exon 3	encodes MATACKR
+```
+
+Isoform fractions were then computed in `R` as follows:
+
+* Ratio1_short = ((exon6 - ((0.071\*exon4) + (0.322\*exon3)))/exon6)
+* Ratio2_long1 = (0.071\*exon4)/exon6
+* Ratio3_long2 = (0.322\*exon3)/exon6
+
+unless the values of either exon3 or exon4 exceeded that of the common exon6, in which case the ratios were set to NA and excluded
 
 Error bars for human RNA-seq data represent the 95% confidence intervals from 10,000 bootstrap samples of the data with replacement, and were computed in `R` using the [`rsample`](https://cran.r-project.org/web/packages/rsample/index.html) package. Plots were generated in `R` version 3.6.0 and plotted with `ggplot2`
 
@@ -66,6 +81,7 @@ library(backports,lib="/proj/jmsimon/Rlibs36")
 library(rstudioapi,lib="/proj/jmsimon/Rlibs36")
 library(cli,lib="/proj/jmsimon/Rlibs36")
 library(withr,lib="/proj/jmsimon/Rlibs36")
+library(dplyr,lib="/proj/jmsimon/Rlibs36", warn.conflicts = FALSE)
 library(tidyverse,lib="/proj/jmsimon/Rlibs36")
 library(magrittr,lib="/proj/jmsimon/Rlibs36")
 library(patchwork,lib="/proj/jmsimon/Rlibs36")
@@ -74,6 +90,7 @@ library(farver,lib="/proj/jmsimon/Rlibs36")
 library(digest,lib="/proj/jmsimon/Rlibs36")
 library(utf8,lib="/proj/jmsimon/Rlibs36")
 library(rsample,lib="/proj/jmsimon/Rlibs36")
+options(dplyr.summarise.inform = FALSE)
 ```
 
 ## Read in human data
@@ -142,7 +159,6 @@ joined = full_join(cols,exp_longer,by="column_num")  %>%
 			T ~ "else"
 			)
 		)
-
 ```
 
 Then we manually set the order that these ages and epochs should appear in figures, and set a default jitter width
@@ -158,12 +174,24 @@ nboot=100
 Note: Number of bootstraps set to 100 here, but for publication we ran 10,000 bootstraps
 ```
 
+### Rename exons based on coordinates and isoform information
+```{r}
+exon7 = "UBE3A_chr15_25620611_25620910"		# exon 7	# encodes MKRAAAK
+exon6 = "UBE3A_chr15_25650607_25650653"		# exon 6	# encodes SGEP...M
+exon5 = "UBE3A_chr15_25652213_25652284"		# exon 5	# noncoding
+exon4 = "UBE3A_chr15_25653766_25653795"		# exon 4	# note this is a shorter form of other exons here that may be annotated as longer, encodes MEKL
+exon3 = "UBE3A_chr15_25654234_25654354"		# exon 3	# encodes MATACKR
+
+EOI = c(exon3,exon4,exon5,exon6,exon7)
+
+```
+
 ### Summarize and plot data for whole brain
 
 ```{r WholeBrain}
 wholebrain_perm = joined %>% 
  	mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
-	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>%
+	filter(Name %in% EOI) %>%
 	group_by(Epoch,Name) %>%
 	bootstraps(times=nboot)
 
@@ -173,9 +201,21 @@ wholebrain_err = map_dfr(wholebrain_perm$splits,
         group_by(Epoch,Name) %>%
 		summarize(MeanExp = mean(Expression)) %>% 
      	pivot_wider(names_from=Name,values_from = MeanExp) %>%
-		mutate(Ratio1_short = (UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284)/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
-		mutate(Ratio2_long1 = UBE3A_chr15_25653766_25653795/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
-		mutate(Ratio3_long2 = UBE3A_chr15_25654234_25654354/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+		rename("exon7" = UBE3A_chr15_25620611_25620910, "exon6" = UBE3A_chr15_25650607_25650653, "exon5" = UBE3A_chr15_25652213_25652284, "exon4" = UBE3A_chr15_25653766_25653795, "exon3" = UBE3A_chr15_25654234_25654354) %>%
+		mutate(
+			Ratio3_long2 = case_when(
+				exon3 <= exon6 ~ (0.322*exon3)/exon6,
+				T ~ NA_real_
+				), 
+			Ratio2_long1 = case_when(
+				exon4 <= exon6 ~ (0.071*exon4)/exon6,
+				T ~ NA_real_
+			), 
+			Ratio1_short = case_when(
+				exon3 <= exon6 & exon4 <= exon6 ~ ((exon6 - ((0.071*exon4) + (0.322*exon3)))/exon6),
+				T ~ NA_real_
+			)
+		) %>%
 		select(Epoch,starts_with("Ratio")) %>%
 		pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))   	
     }) %>%
@@ -186,11 +226,23 @@ wholebrain_obs = joined %>%
  	mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
 	group_by(Epoch,Name) %>% 
 	summarize(MeanExp = mean(Expression)) %>% 
-	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>%
+	filter(Name %in% EOI) %>%
 	pivot_wider(names_from=Name,values_from = MeanExp) %>%
-	mutate(Ratio1_short = (UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284)/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
-	mutate(Ratio2_long1 = UBE3A_chr15_25653766_25653795/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
-	mutate(Ratio3_long2 = UBE3A_chr15_25654234_25654354/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	rename("exon7" = UBE3A_chr15_25620611_25620910, "exon6" = UBE3A_chr15_25650607_25650653, "exon5" = UBE3A_chr15_25652213_25652284, "exon4" = UBE3A_chr15_25653766_25653795, "exon3" = UBE3A_chr15_25654234_25654354) %>%
+	mutate(
+		Ratio3_long2 = case_when(
+			exon3 <= exon6 ~ (0.322*exon3)/exon6,
+			T ~ NA_real_
+			), 
+		Ratio2_long1 = case_when(
+			exon4 <= exon6 ~ (0.071*exon4)/exon6,
+			T ~ NA_real_
+		), 
+		Ratio1_short = case_when(
+			exon3 <= exon6 & exon4 <= exon6 ~ ((exon6 - ((0.071*exon4) + (0.322*exon3)))/exon6),
+			T ~ NA_real_
+		)
+	) %>%
 	select(Epoch,starts_with("Ratio")) %>%
 	pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))
 
@@ -215,7 +267,7 @@ wholebrain = full_join(wholebrain_obs,wholebrain_err) %>%
 hip_perm = joined %>% 
 	filter(structure_acronym=="HIP") %>%
  	mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
-	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>%
+	filter(Name %in% EOI) %>%
 	group_by(Epoch,Name) %>%
 	bootstraps(times=nboot)
 
@@ -225,9 +277,21 @@ hip_err = map_dfr(hip_perm$splits,
         group_by(Epoch,Name) %>%
 		summarize(MeanExp = mean(Expression)) %>% 
      	pivot_wider(names_from=Name,values_from = MeanExp) %>%
-		mutate(Ratio1_short = (UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284)/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
-		mutate(Ratio2_long1 = UBE3A_chr15_25653766_25653795/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
-		mutate(Ratio3_long2 = UBE3A_chr15_25654234_25654354/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+		rename("exon7" = UBE3A_chr15_25620611_25620910, "exon6" = UBE3A_chr15_25650607_25650653, "exon5" = UBE3A_chr15_25652213_25652284, "exon4" = UBE3A_chr15_25653766_25653795, "exon3" = UBE3A_chr15_25654234_25654354) %>%
+		mutate(
+			Ratio3_long2 = case_when(
+				exon3 <= exon6 ~ (0.322*exon3)/exon6,
+				T ~ NA_real_
+				), 
+			Ratio2_long1 = case_when(
+				exon4 <= exon6 ~ (0.071*exon4)/exon6,
+				T ~ NA_real_
+			), 
+			Ratio1_short = case_when(
+				exon3 <= exon6 & exon4 <= exon6 ~ ((exon6 - ((0.071*exon4) + (0.322*exon3)))/exon6),
+				T ~ NA_real_
+			)
+		) %>%
 		select(Epoch,starts_with("Ratio")) %>%
 		pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))   	
     }) %>%
@@ -239,11 +303,23 @@ hip_obs = joined %>%
  	mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
 	group_by(Epoch,Name) %>% 
 	summarize(MeanExp = mean(Expression)) %>% 
-	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>%
+	filter(Name %in% EOI) %>%
 	pivot_wider(names_from=Name,values_from = MeanExp) %>%
-	mutate(Ratio1_short = (UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284)/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
-	mutate(Ratio2_long1 = UBE3A_chr15_25653766_25653795/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
-	mutate(Ratio3_long2 = UBE3A_chr15_25654234_25654354/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	rename("exon7" = UBE3A_chr15_25620611_25620910, "exon6" = UBE3A_chr15_25650607_25650653, "exon5" = UBE3A_chr15_25652213_25652284, "exon4" = UBE3A_chr15_25653766_25653795, "exon3" = UBE3A_chr15_25654234_25654354) %>%
+	mutate(
+		Ratio3_long2 = case_when(
+			exon3 <= exon6 ~ (0.322*exon3)/exon6,
+			T ~ NA_real_
+			), 
+		Ratio2_long1 = case_when(
+			exon4 <= exon6 ~ (0.071*exon4)/exon6,
+			T ~ NA_real_
+		), 
+		Ratio1_short = case_when(
+			exon3 <= exon6 & exon4 <= exon6 ~ ((exon6 - ((0.071*exon4) + (0.322*exon3)))/exon6),
+			T ~ NA_real_
+		)
+	) %>%
 	select(Epoch,starts_with("Ratio")) %>%
 	pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))
 
@@ -259,6 +335,7 @@ hip = full_join(hip_obs,hip_err) %>%
 	ylim(0,1) +
 	ggtitle("Hippocampus") +
 	scale_fill_manual("legend", values = c("Ratio1_short" = "#9A2C06", "Ratio2_long1" = "#2A9A06", "Ratio3_long2" = "#06749A"))
+
 ```
 
 ### Summarize and plot data for Prefrontal cortex
@@ -267,7 +344,7 @@ hip = full_join(hip_obs,hip_err) %>%
 pfc_perm = joined %>% 
 	filter(structure_acronym=="DFC" | structure_acronym=="VFC" | structure_acronym=="MFC" | structure_acronym=="OFC") %>%
  	mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
-	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>%
+	filter(Name %in% EOI) %>%
 	group_by(Epoch,Name) %>%
 	bootstraps(times=nboot)
 
@@ -277,9 +354,21 @@ pfc_err = map_dfr(pfc_perm$splits,
         group_by(Epoch,Name) %>%
 		summarize(MeanExp = mean(Expression)) %>% 
      	pivot_wider(names_from=Name,values_from = MeanExp) %>%
-		mutate(Ratio1_short = (UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284)/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
-		mutate(Ratio2_long1 = UBE3A_chr15_25653766_25653795/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
-		mutate(Ratio3_long2 = UBE3A_chr15_25654234_25654354/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+		rename("exon7" = UBE3A_chr15_25620611_25620910, "exon6" = UBE3A_chr15_25650607_25650653, "exon5" = UBE3A_chr15_25652213_25652284, "exon4" = UBE3A_chr15_25653766_25653795, "exon3" = UBE3A_chr15_25654234_25654354) %>%
+		mutate(
+			Ratio3_long2 = case_when(
+				exon3 <= exon6 ~ (0.322*exon3)/exon6,
+				T ~ NA_real_
+				), 
+			Ratio2_long1 = case_when(
+				exon4 <= exon6 ~ (0.071*exon4)/exon6,
+				T ~ NA_real_
+			), 
+			Ratio1_short = case_when(
+				exon3 <= exon6 & exon4 <= exon6 ~ ((exon6 - ((0.071*exon4) + (0.322*exon3)))/exon6),
+				T ~ NA_real_
+			)
+		) %>%
 		select(Epoch,starts_with("Ratio")) %>%
 		pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))   	
     }) %>%
@@ -291,11 +380,23 @@ pfc_obs = joined %>%
  	mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
 	group_by(Epoch,Name) %>% 
 	summarize(MeanExp = mean(Expression)) %>% 
-	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>%
+	filter(Name %in% EOI) %>%
 	pivot_wider(names_from=Name,values_from = MeanExp) %>%
-	mutate(Ratio1_short = (UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284)/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
-	mutate(Ratio2_long1 = UBE3A_chr15_25653766_25653795/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
-	mutate(Ratio3_long2 = UBE3A_chr15_25654234_25654354/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	rename("exon7" = UBE3A_chr15_25620611_25620910, "exon6" = UBE3A_chr15_25650607_25650653, "exon5" = UBE3A_chr15_25652213_25652284, "exon4" = UBE3A_chr15_25653766_25653795, "exon3" = UBE3A_chr15_25654234_25654354) %>%
+	mutate(
+		Ratio3_long2 = case_when(
+			exon3 <= exon6 ~ (0.322*exon3)/exon6,
+			T ~ NA_real_
+			), 
+		Ratio2_long1 = case_when(
+			exon4 <= exon6 ~ (0.071*exon4)/exon6,
+			T ~ NA_real_
+		), 
+		Ratio1_short = case_when(
+			exon3 <= exon6 & exon4 <= exon6 ~ ((exon6 - ((0.071*exon4) + (0.322*exon3)))/exon6),
+			T ~ NA_real_
+		)
+	) %>%
 	select(Epoch,starts_with("Ratio")) %>%
 	pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))
 
@@ -311,7 +412,6 @@ pfc = full_join(pfc_obs,pfc_err) %>%
 	ylim(0,1) +
 	ggtitle("Prefrontal cortex") +
 	scale_fill_manual("legend", values = c("Ratio1_short" = "#9A2C06", "Ratio2_long1" = "#2A9A06", "Ratio3_long2" = "#06749A"))
-
 ```
 
 ### Summarize and plot data for Sensory cortex
@@ -320,7 +420,7 @@ pfc = full_join(pfc_obs,pfc_err) %>%
 sensory_perm = joined %>% 
 	filter(structure_acronym=="S1C" | structure_acronym=="A1C" | structure_acronym=="M1C" | structure_acronym=="M1C-S1C") %>%
  	mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
-	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>%
+	filter(Name %in% EOI) %>%
 	group_by(Epoch,Name) %>%
 	bootstraps(times=nboot)
 
@@ -330,9 +430,21 @@ sensory_err = map_dfr(sensory_perm$splits,
         group_by(Epoch,Name) %>%
 		summarize(MeanExp = mean(Expression)) %>% 
      	pivot_wider(names_from=Name,values_from = MeanExp) %>%
-		mutate(Ratio1_short = (UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284)/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
-		mutate(Ratio2_long1 = UBE3A_chr15_25653766_25653795/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
-		mutate(Ratio3_long2 = UBE3A_chr15_25654234_25654354/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+		rename("exon7" = UBE3A_chr15_25620611_25620910, "exon6" = UBE3A_chr15_25650607_25650653, "exon5" = UBE3A_chr15_25652213_25652284, "exon4" = UBE3A_chr15_25653766_25653795, "exon3" = UBE3A_chr15_25654234_25654354) %>%
+		mutate(
+			Ratio3_long2 = case_when(
+				exon3 <= exon6 ~ (0.322*exon3)/exon6,
+				T ~ NA_real_
+				), 
+			Ratio2_long1 = case_when(
+				exon4 <= exon6 ~ (0.071*exon4)/exon6,
+				T ~ NA_real_
+			), 
+			Ratio1_short = case_when(
+				exon3 <= exon6 & exon4 <= exon6 ~ ((exon6 - ((0.071*exon4) + (0.322*exon3)))/exon6),
+				T ~ NA_real_
+			)
+		) %>%
 		select(Epoch,starts_with("Ratio")) %>%
 		pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))   	
     }) %>%
@@ -344,11 +456,23 @@ sensory_obs = joined %>%
  	mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
 	group_by(Epoch,Name) %>% 
 	summarize(MeanExp = mean(Expression)) %>% 
-	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>%
+	filter(Name %in% EOI) %>%
 	pivot_wider(names_from=Name,values_from = MeanExp) %>%
-	mutate(Ratio1_short = (UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284)/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
-	mutate(Ratio2_long1 = UBE3A_chr15_25653766_25653795/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
-	mutate(Ratio3_long2 = UBE3A_chr15_25654234_25654354/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	rename("exon7" = UBE3A_chr15_25620611_25620910, "exon6" = UBE3A_chr15_25650607_25650653, "exon5" = UBE3A_chr15_25652213_25652284, "exon4" = UBE3A_chr15_25653766_25653795, "exon3" = UBE3A_chr15_25654234_25654354) %>%
+	mutate(
+		Ratio3_long2 = case_when(
+			exon3 <= exon6 ~ (0.322*exon3)/exon6,
+			T ~ NA_real_
+			), 
+		Ratio2_long1 = case_when(
+			exon4 <= exon6 ~ (0.071*exon4)/exon6,
+			T ~ NA_real_
+		), 
+		Ratio1_short = case_when(
+			exon3 <= exon6 & exon4 <= exon6 ~ ((exon6 - ((0.071*exon4) + (0.322*exon3)))/exon6),
+			T ~ NA_real_
+		)
+	) %>%
 	select(Epoch,starts_with("Ratio")) %>%
 	pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))
 
@@ -372,7 +496,7 @@ sensory = full_join(sensory_obs,sensory_err) %>%
 cbm_perm = joined %>% 
 	filter(structure_acronym=="CB" | structure_acronym=="CBC") %>%
  	mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
-	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>%
+	filter(Name %in% EOI) %>%
 	group_by(Epoch,Name) %>%
 	bootstraps(times=nboot)
 
@@ -382,9 +506,21 @@ cbm_err = map_dfr(cbm_perm$splits,
         group_by(Epoch,Name) %>%
 		summarize(MeanExp = mean(Expression)) %>% 
      	pivot_wider(names_from=Name,values_from = MeanExp) %>%
-		mutate(Ratio1_short = (UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284)/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
-		mutate(Ratio2_long1 = UBE3A_chr15_25653766_25653795/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
-		mutate(Ratio3_long2 = UBE3A_chr15_25654234_25654354/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+		rename("exon7" = UBE3A_chr15_25620611_25620910, "exon6" = UBE3A_chr15_25650607_25650653, "exon5" = UBE3A_chr15_25652213_25652284, "exon4" = UBE3A_chr15_25653766_25653795, "exon3" = UBE3A_chr15_25654234_25654354) %>%
+		mutate(
+			Ratio3_long2 = case_when(
+				exon3 <= exon6 ~ (0.322*exon3)/exon6,
+				T ~ NA_real_
+				), 
+			Ratio2_long1 = case_when(
+				exon4 <= exon6 ~ (0.071*exon4)/exon6,
+				T ~ NA_real_
+			), 
+			Ratio1_short = case_when(
+				exon3 <= exon6 & exon4 <= exon6 ~ ((exon6 - ((0.071*exon4) + (0.322*exon3)))/exon6),
+				T ~ NA_real_
+			)
+		) %>%
 		select(Epoch,starts_with("Ratio")) %>%
 		pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))   	
     }) %>%
@@ -396,11 +532,23 @@ cbm_obs = joined %>%
  	mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
 	group_by(Epoch,Name) %>% 
 	summarize(MeanExp = mean(Expression)) %>% 
-	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>%
+	filter(Name %in% EOI) %>%
 	pivot_wider(names_from=Name,values_from = MeanExp) %>%
-	mutate(Ratio1_short = (UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284)/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
-	mutate(Ratio2_long1 = UBE3A_chr15_25653766_25653795/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
-	mutate(Ratio3_long2 = UBE3A_chr15_25654234_25654354/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	rename("exon7" = UBE3A_chr15_25620611_25620910, "exon6" = UBE3A_chr15_25650607_25650653, "exon5" = UBE3A_chr15_25652213_25652284, "exon4" = UBE3A_chr15_25653766_25653795, "exon3" = UBE3A_chr15_25654234_25654354) %>%
+	mutate(
+		Ratio3_long2 = case_when(
+			exon3 <= exon6 ~ (0.322*exon3)/exon6,
+			T ~ NA_real_
+			), 
+		Ratio2_long1 = case_when(
+			exon4 <= exon6 ~ (0.071*exon4)/exon6,
+			T ~ NA_real_
+		), 
+		Ratio1_short = case_when(
+			exon3 <= exon6 & exon4 <= exon6 ~ ((exon6 - ((0.071*exon4) + (0.322*exon3)))/exon6),
+			T ~ NA_real_
+		)
+	) %>%
 	select(Epoch,starts_with("Ratio")) %>%
 	pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))
 
@@ -424,7 +572,7 @@ cbm = full_join(cbm_obs,cbm_err) %>%
 thalamus_perm = joined %>% 
 	filter(structure_acronym=="DTH" | structure_acronym=="MD") %>%
  	mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
-	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>%
+	filter(Name %in% EOI) %>%
 	group_by(Epoch,Name) %>%
 	bootstraps(times=nboot)
 
@@ -434,9 +582,21 @@ thalamus_err = map_dfr(thalamus_perm$splits,
         group_by(Epoch,Name) %>%
 		summarize(MeanExp = mean(Expression)) %>% 
      	pivot_wider(names_from=Name,values_from = MeanExp) %>%
-		mutate(Ratio1_short = (UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284)/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
-		mutate(Ratio2_long1 = UBE3A_chr15_25653766_25653795/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
-		mutate(Ratio3_long2 = UBE3A_chr15_25654234_25654354/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+		rename("exon7" = UBE3A_chr15_25620611_25620910, "exon6" = UBE3A_chr15_25650607_25650653, "exon5" = UBE3A_chr15_25652213_25652284, "exon4" = UBE3A_chr15_25653766_25653795, "exon3" = UBE3A_chr15_25654234_25654354) %>%
+		mutate(
+			Ratio3_long2 = case_when(
+				exon3 <= exon6 ~ (0.322*exon3)/exon6,
+				T ~ NA_real_
+				), 
+			Ratio2_long1 = case_when(
+				exon4 <= exon6 ~ (0.071*exon4)/exon6,
+				T ~ NA_real_
+			), 
+			Ratio1_short = case_when(
+				exon3 <= exon6 & exon4 <= exon6 ~ ((exon6 - ((0.071*exon4) + (0.322*exon3)))/exon6),
+				T ~ NA_real_
+			)
+		) %>%
 		select(Epoch,starts_with("Ratio")) %>%
 		pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))   	
     }) %>%
@@ -448,11 +608,23 @@ thalamus_obs = joined %>%
  	mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
 	group_by(Epoch,Name) %>% 
 	summarize(MeanExp = mean(Expression)) %>% 
-	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>%
+	filter(Name %in% EOI) %>%
 	pivot_wider(names_from=Name,values_from = MeanExp) %>%
-	mutate(Ratio1_short = (UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284)/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
-	mutate(Ratio2_long1 = UBE3A_chr15_25653766_25653795/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
-	mutate(Ratio3_long2 = UBE3A_chr15_25654234_25654354/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	rename("exon7" = UBE3A_chr15_25620611_25620910, "exon6" = UBE3A_chr15_25650607_25650653, "exon5" = UBE3A_chr15_25652213_25652284, "exon4" = UBE3A_chr15_25653766_25653795, "exon3" = UBE3A_chr15_25654234_25654354) %>%
+	mutate(
+		Ratio3_long2 = case_when(
+			exon3 <= exon6 ~ (0.322*exon3)/exon6,
+			T ~ NA_real_
+			), 
+		Ratio2_long1 = case_when(
+			exon4 <= exon6 ~ (0.071*exon4)/exon6,
+			T ~ NA_real_
+		), 
+		Ratio1_short = case_when(
+			exon3 <= exon6 & exon4 <= exon6 ~ ((exon6 - ((0.071*exon4) + (0.322*exon3)))/exon6),
+			T ~ NA_real_
+		)
+	) %>%
 	select(Epoch,starts_with("Ratio")) %>%
 	pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))
 
@@ -474,27 +646,39 @@ thalamus = full_join(thalamus_obs,thalamus_err) %>%
 
 ```{r, Fig1, fig.width=12}
 (hip+pfc+sensory)/(cbm+thalamus+wholebrain)
+# Note thalamus has two NA ratios in the early childhood epoch
 ```
 
 ### Plot all individual brain regions and timepoints as boxplots for supplementary material
 
 ```{r, Fig2, fig.width=12,fig.height=12}
 left = joined %>% 
-	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>% 
+	filter(Name %in% EOI) %>%
 	select(-ExonID) %>%
 	pivot_wider(names_from=Name,values_from = Expression) %>% 
-	mutate(Ratio1_short = (UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284)/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
-	mutate(Ratio2_long1 = UBE3A_chr15_25653766_25653795/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
-	mutate(Ratio3_long2 = UBE3A_chr15_25654234_25654354/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	rename("exon7" = UBE3A_chr15_25620611_25620910, "exon6" = UBE3A_chr15_25650607_25650653, "exon5" = UBE3A_chr15_25652213_25652284, "exon4" = UBE3A_chr15_25653766_25653795, "exon3" = UBE3A_chr15_25654234_25654354) %>%
+	mutate(
+		Ratio3_long2 = case_when(
+			exon3 <= exon6 ~ (0.322*exon3)/exon6,
+			T ~ NA_real_
+			), 
+		Ratio2_long1 = case_when(
+			exon4 <= exon6 ~ (0.071*exon4)/exon6,
+			T ~ NA_real_
+		), 
+		Ratio1_short = case_when(
+			exon3 <= exon6 & exon4 <= exon6 ~ ((exon6 - ((0.071*exon4) + (0.322*exon3)))/exon6),
+			T ~ NA_real_
+		)
+	) %>%
 	select(-starts_with("UBE3A")) %>%
 	pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio")) %>%
 	filter(structure_acronym == "A1C" | structure_acronym == "AMY" | structure_acronym == "CBC" | structure_acronym == "DFC" | structure_acronym == "HIP" | structure_acronym == "IPC" | structure_acronym == "ITC" | structure_acronym == "M1C" | structure_acronym == "MD" | structure_acronym == "MFC" | structure_acronym == "OFC" | structure_acronym == "S1C" | structure_acronym == "STC" | structure_acronym == "STR" | structure_acronym == "V1C" | structure_acronym == "VFC") %>%
-	arrange(desc(structure_acronym)) %>%
 	ggplot(aes(x=age,y=Ratio,fill=Category)) + 
 	geom_boxplot(aes(color=Category)) + 
-	facet_wrap(~structure_acronym,nrow=8,ncol=2,as.table=T, strip.position = "top",scales="free") + 
-	theme_minimal() + 
-	theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),legend.position = "none",strip.background = element_blank(), strip.placement = NULL,axis.line.x = element_line(colour = 'black', size=1, linetype='solid'),axis.line.y = element_line(colour = 'black', size=1, linetype='solid'),axis.ticks.x = element_line(colour = 'black', size=1, linetype='solid'),axis.ticks.y = element_line(colour = 'black', size=1, linetype='solid'),panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+	facet_wrap(~structure_acronym,nrow=8,ncol=2,as.table=T, strip.position = "top",scales="free_x") + 
+	theme_classic() + 
+	theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),legend.position = "none",strip.background = element_blank(), strip.placement = NULL,axis.line.x = element_line(colour = 'black', size=1, linetype='solid'),panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
 	scale_x_discrete(limits = order) +
 	scale_fill_manual(values = c("Ratio1_short" = "#9A2C06", "Ratio2_long1" = "#2A9A06", "Ratio3_long2" = "#06749A")) +
 	scale_color_manual(values = c("Ratio1_short" = "#9A2C06", "Ratio2_long1" = "#2A9A06", "Ratio3_long2" = "#06749A")) +
@@ -502,22 +686,33 @@ left = joined %>%
 	ylab("Isoform Fraction")
 
 right = joined %>% 
-	filter(Name=="UBE3A_chr15_25620611_25620910" | Name=="UBE3A_chr15_25653766_25653795" | Name=="UBE3A_chr15_25654234_25654354" | Name=="UBE3A_chr15_25652213_25652284") %>% 
+	filter(Name %in% EOI) %>%
 	select(-ExonID) %>%
 	pivot_wider(names_from=Name,values_from = Expression) %>% 
-	mutate(Ratio1_short = (UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284)/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
-	mutate(Ratio2_long1 = UBE3A_chr15_25653766_25653795/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
-	mutate(Ratio3_long2 = UBE3A_chr15_25654234_25654354/(UBE3A_chr15_25620611_25620910+UBE3A_chr15_25652213_25652284+UBE3A_chr15_25653766_25653795+UBE3A_chr15_25654234_25654354)) %>%
+	rename("exon7" = UBE3A_chr15_25620611_25620910, "exon6" = UBE3A_chr15_25650607_25650653, "exon5" = UBE3A_chr15_25652213_25652284, "exon4" = UBE3A_chr15_25653766_25653795, "exon3" = UBE3A_chr15_25654234_25654354) %>%
+	mutate(
+		Ratio3_long2 = case_when(
+			exon3 <= exon6 ~ (0.322*exon3)/exon6,
+			T ~ NA_real_
+			), 
+		Ratio2_long1 = case_when(
+			exon4 <= exon6 ~ (0.071*exon4)/exon6,
+			T ~ NA_real_
+		), 
+		Ratio1_short = case_when(
+			exon3 <= exon6 & exon4 <= exon6 ~ ((exon6 - ((0.071*exon4) + (0.322*exon3)))/exon6),
+			T ~ NA_real_
+		)
+	) %>%
 	select(-starts_with("UBE3A")) %>%
 	pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio")) %>%
 	filter(structure_acronym == "CB" | structure_acronym == "CGE" | structure_acronym == "DTH" | structure_acronym == "LGE" | structure_acronym == "M1C-S1C" | structure_acronym == "MGE" | structure_acronym == "Ocx" | structure_acronym == "PCx" | structure_acronym == "TCx" | structure_acronym == "URL") %>%
-	arrange(desc(structure_acronym)) %>%
 	ggplot(aes(x=age,y=Ratio,fill=Category)) + 
 	geom_boxplot(aes(color=Category)) + 
-	facet_wrap(~structure_acronym,nrow=5,ncol=2,as.table=T, strip.position = "top",scales="free") + 
-	theme_minimal() + 
-	theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),strip.background = element_blank(), strip.placement = NULL,axis.line.x = element_line(colour = 'black', size=1, linetype='solid'),axis.line.y = element_line(colour = 'black', size=1, linetype='solid'),axis.ticks.x = element_line(colour = 'black', size=1, linetype='solid'),axis.ticks.y = element_line(colour = 'black', size=1, linetype='solid'),panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
-	scale_x_discrete(limits = order[1:15]) +
+	facet_wrap(~structure_acronym,nrow=5,ncol=2,as.table=T, strip.position = "top",scales="free_x") + 
+	theme_classic() + 
+	theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),strip.background = element_blank(), strip.placement = NULL,axis.line.x = element_line(colour = 'black', size=1, linetype='solid'),panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+	scale_x_discrete(limits = order[1:7]) +
 	scale_fill_manual(values = c("Ratio1_short" = "#9A2C06", "Ratio2_long1" = "#2A9A06", "Ratio3_long2" = "#06749A")) +
 	scale_color_manual(values = c("Ratio1_short" = "#9A2C06", "Ratio2_long1" = "#2A9A06", "Ratio3_long2" = "#06749A")) +
 	ylim(0,1) +
@@ -533,7 +728,6 @@ AAAAAAABB
 AAAAAAABB
 AAAAAAABB
 "
-
 left + right + plot_layout(design=layout,heights=c(1,0.8244),guides = 'collect')
 # Note 0.8244 is a magic scaling factor here such that the y axis values and lines are aligned exactly
 ```
@@ -605,14 +799,13 @@ We then ran deeptools multiBigWigSummary to compute exon level coverages
 
 ```
 multiBigwigSummary BED-file -b Mouse_8weeks_cerebellum_RNA_Rep1.bigWig Mouse_8weeks_cerebellum_RNA_Rep2.bigWig Mouse_8weeks_corticalplate_RNA_Rep1.bigWig Mouse_8weeks_corticalplate_RNA_Rep2.bigWig Mouse_8weeks_frontalcortex_RNA_Rep1.bigWig Mouse_8weeks_frontalcortex_RNA_Rep2.bigWig Mouse_E10-5_forebrain_RNA_Rep1.bigWig Mouse_E10-5_forebrain_RNA_Rep2.bigWig Mouse_E10-5_hindbrain_RNA_Rep1.bigWig Mouse_E10-5_hindbrain_RNA_Rep2.bigWig Mouse_E10-5_midbrain_RNA_Rep1.bigWig Mouse_E10-5_midbrain_RNA_Rep2.bigWig Mouse_E11-5_forebrain_RNA_Rep1.bigWig Mouse_E11-5_forebrain_RNA_Rep2.bigWig Mouse_E11-5_hindbrain_RNA_Rep1.bigWig Mouse_E11-5_hindbrain_RNA_Rep2.bigWig Mouse_E11-5_midbrain_RNA_Rep1.bigWig Mouse_E11-5_midbrain_RNA_Rep2.bigWig Mouse_E12-5_forebrain_RNA_Rep1.bigWig Mouse_E12-5_forebrain_RNA_Rep2.bigWig Mouse_E12-5_hindbrain_RNA_Rep1.bigWig Mouse_E12-5_hindbrain_RNA_Rep2.bigWig Mouse_E12-5_midbrain_RNA_Rep1.bigWig Mouse_E12-5_midbrain_RNA_Rep2.bigWig Mouse_E13-5_forebrain_RNA_Rep1.bigWig Mouse_E13-5_forebrain_RNA_Rep2.bigWig Mouse_E13-5_hindbrain_RNA_Rep1.bigWig Mouse_E13-5_hindbrain_RNA_Rep2.bigWig Mouse_E13-5_midbrain_RNA_Rep1.bigWig Mouse_E13-5_midbrain_RNA_Rep2.bigWig Mouse_E14-5_forebrain_RNA_Rep1.bigWig Mouse_E14-5_forebrain_RNA_Rep2.bigWig Mouse_E14-5_hindbrain_RNA_Rep1.bigWig Mouse_E14-5_hindbrain_RNA_Rep2.bigWig Mouse_E14-5_midbrain_RNA_Rep1.bigWig Mouse_E14-5_midbrain_RNA_Rep2.bigWig Mouse_E15-5_forebrain_RNA_Rep1.bigWig Mouse_E15-5_forebrain_RNA_Rep2.bigWig Mouse_E15-5_hindbrain_RNA_Rep1.bigWig Mouse_E15-5_hindbrain_RNA_Rep2.bigWig Mouse_E15-5_midbrain_RNA_Rep1.bigWig Mouse_E15-5_midbrain_RNA_Rep2.bigWig Mouse_E16-5_forebrain_RNA_Rep1.bigWig Mouse_E16-5_forebrain_RNA_Rep2.bigWig Mouse_E16-5_hindbrain_RNA_Rep1.bigWig Mouse_E16-5_hindbrain_RNA_Rep2.bigWig Mouse_E16-5_midbrain_RNA_Rep1.bigWig Mouse_E16-5_midbrain_RNA_Rep2.bigWig Mouse_P0_forebrain_RNA_Rep1.bigWig Mouse_P0_forebrain_RNA_Rep2.bigWig Mouse_P0_hindbrain_RNA_Rep1.bigWig Mouse_P0_hindbrain_RNA_Rep2.bigWig Mouse_P0_midbrain_RNA_Rep1.bigWig Mouse_P0_midbrain_RNA_Rep2.bigWig -o ENCODE_mouse_dev_timecourse_bigWigSummary_Ube3a_isoforms.npz -p 4 --outRawCounts ENCODE_mouse_dev_timecourse_bigWigSummary_Ube3a_isoforms.rawcounts.tab --smartLabels --BED ube3a.bed
-
 ```
 
 Where `ube3a.bed` contains the following information about isoform start sites:
 
 ```
-chr7    59243350        59243469        long
-chr7    59247173        59247217        short
+chr7    59243350        59243469        exon3
+chr7    59247173        59247217        exon4
 ```
 
 The header line of the `.tab` output from deeptools was cleaned up slightly to give us the file provided here `ENCODE_mouse_dev_timecourse_bigWigSummary_Ube3a_isoforms.rawcounts.txt`, which we can now read into `R`
@@ -630,16 +823,16 @@ dev = counts %>%
 	unite("Exon",c(chr,start,end)) %>%
 	mutate(
 		Isoform = case_when(
-			Exon=="chr7_59243350_59243469" ~ "Long",
-			Exon=="chr7_59247173_59247217" ~ "Short",
+			Exon=="chr7_59243350_59243469" ~ "exon3",
+			Exon=="chr7_59247173_59247217" ~ "exon4",
 			T ~ "else"
 			)
 	) %>%
 	select(-RNA,-Exon) %>%
 	pivot_wider(names_from=Isoform,values_from=Expression) %>%
-	mutate(ShortFraction = Short/(Short+Long)) %>%
-	mutate(LongFraction = Long/(Short+Long)) %>%
-	select(-Long,-Short) %>%
+	mutate(ShortFraction = (exon4-exon3)/exon4) %>%
+	mutate(LongFraction = exon3/exon4) %>%
+	select(-exon3,-exon4) %>%
 	pivot_longer(names_to="Isoform",values_to="Fraction",cols=c(ShortFraction,LongFraction)) %>%
 	mutate(Isoform=str_replace_all(Isoform,"Fraction","")) %>%
 	mutate(Isoform=fct_relevel(Isoform,c("Short","Long"))) %>%
@@ -666,16 +859,16 @@ adult = counts %>%
 	unite("Exon",c(chr,start,end)) %>%
 	mutate(
 		Isoform = case_when(
-			Exon=="chr7_59243350_59243469" ~ "Long",
-			Exon=="chr7_59247173_59247217" ~ "Short",
+			Exon=="chr7_59243350_59243469" ~ "exon3",
+			Exon=="chr7_59247173_59247217" ~ "exon4",
 			T ~ "else"
 			)
 	) %>%
 	select(-RNA,-Exon) %>%
 	pivot_wider(names_from=Isoform,values_from=Expression) %>%
-	mutate(ShortFraction = Short/(Short+Long)) %>%
-	mutate(LongFraction = Long/(Short+Long)) %>%
-	select(-Long,-Short) %>%
+	mutate(ShortFraction = (exon4-exon3)/exon4) %>%
+	mutate(LongFraction = exon3/exon4) %>%
+	select(-exon3,-exon4) %>%
 	pivot_longer(names_to="Isoform",values_to="Fraction",cols=c(ShortFraction,LongFraction)) %>%
 	mutate(Isoform=str_replace_all(Isoform,"Fraction","")) %>%
 	mutate(Isoform=fct_relevel(Isoform,c("Short","Long"))) %>%
@@ -696,6 +889,5 @@ adult = counts %>%
 ## Write out plots to one figure using patchwork
 
 ```{r, Fig3, fig.width=12}
-(dev)/(adult)
+dev+adult + plot_layout(widths = c(3, 1))
 ```
-
