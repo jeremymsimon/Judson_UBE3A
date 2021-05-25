@@ -723,7 +723,7 @@ left = joined %>%
     pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio")) %>%
     filter(structure_acronym == "A1C" | structure_acronym == "AMY" | structure_acronym == "CBC" | structure_acronym == "DFC" | structure_acronym == "HIP" | structure_acronym == "IPC" | structure_acronym == "ITC" | structure_acronym == "M1C" | structure_acronym == "MD" | structure_acronym == "MFC" | structure_acronym == "OFC" | structure_acronym == "S1C" | structure_acronym == "STC" | structure_acronym == "STR" | structure_acronym == "V1C" | structure_acronym == "VFC") %>%
     ggplot(aes(x=age,y=Ratio,fill=Category)) + 
-    geom_boxplot(aes(color=Category)) + 
+    geom_boxplot(aes(color=Category),position=position_dodge(width=0.9,preserve="single")) + 
     facet_wrap(~structure_acronym,nrow=8,ncol=2,as.table=T, strip.position = "top",scales="free_x") + 
     theme_classic() + 
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),legend.position = "none",strip.background = element_blank(), strip.placement = NULL,axis.line.x = element_line(colour = 'black', size=1, linetype='solid'),panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
@@ -756,7 +756,7 @@ right = joined %>%
     pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio")) %>%
     filter(structure_acronym == "CB" | structure_acronym == "CGE" | structure_acronym == "DTH" | structure_acronym == "LGE" | structure_acronym == "M1C-S1C" | structure_acronym == "MGE" | structure_acronym == "Ocx" | structure_acronym == "PCx" | structure_acronym == "TCx" | structure_acronym == "URL") %>%
     ggplot(aes(x=age,y=Ratio,fill=Category)) + 
-    geom_boxplot(aes(color=Category)) + 
+    geom_boxplot(aes(color=Category),position=position_dodge(width=0.9,preserve="single")) + 
     facet_wrap(~structure_acronym,nrow=5,ncol=2,as.table=T, strip.position = "top",scales="free_x") + 
     theme_classic() + 
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),strip.background = element_blank(), strip.placement = NULL,axis.line.x = element_line(colour = 'black', size=1, linetype='solid'),panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
