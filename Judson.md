@@ -2,7 +2,7 @@
 ## Judson et al. 2021 (in preparation)
 
 This repository contains `R` code to generate some of the figures
-presented in Judson *et al.* 2020 (*in preparation*).
+presented in Judson *et al.* 2021 (*in preparation*).
 
 We used publicly available RNA-seq data in mouse and human to
 demonstrate that the short isoform of UBE3A is expressed preferentially
@@ -22,8 +22,7 @@ Signal over exons corresponding to exons 3 and 4 (mm10 reference) were
 tabulated using [deeptools
 multiBigwigSummary](https://deeptools.readthedocs.io/en/develop/content/tools/multiBigwigSummary.html).
 
-Isoform fractions were then computed in `R`, as demonstrated here. Error
-bars represent the standard deviation in isoform fraction.
+Isoform fractions were then computed in `R`, as demonstrated here.
 
 Human RNA-seq data summarized to exons were obtained from
 [BrainSpan](http://www.brainspan.org/static/download.html), and filtered
@@ -70,12 +69,7 @@ Isoform fractions were then computed in `R` as follows:
 unless the values of either exon3 or exon4 exceeded that of the common
 exon6, in which case the ratios were set to NA and excluded
 
-Error bars for human RNA-seq data represent the 95% confidence intervals
-from 10,000 bootstrap samples of the data with replacement, and were
-computed in `R` using the
-[`rsample`](https://cran.r-project.org/web/packages/rsample/index.html)
-package. Plots were generated in `R` version 3.6.0 and plotted with
-`ggplot2`
+Plots were generated in `R` version 3.6.0 with `ggplot2`
 
 ## Load packages
 
@@ -200,10 +194,7 @@ width
 order = c("8_pcw","9_pcw","12_pcw","13_pcw","16_pcw","17_pcw","19_pcw","21_pcw","24_pcw","25_pcw","26_pcw","35_pcw","37_pcw","4_mos","10_mos","1_yrs","2_yrs","3_yrs","4_yrs","8_yrs","11_yrs","13_yrs","15_yrs","18_yrs","19_yrs","21_yrs","23_yrs","30_yrs","36_yrs","37_yrs","40_yrs")
 epoch_order = c("FirstTri","SecondTri","ThirdTri","EarlyPost","EarlyChild","Adolescent","Adult")
 dodge = position_dodge(width=0.9)
-nboot=100
 ```
-
-    Note: Number of bootstraps set to 100 here, but for publication we ran 10,000 bootstraps
 
 ### Rename exons based on coordinates and isoform information
 
@@ -220,20 +211,17 @@ EOI = c(exon3,exon4,exon5,exon6,exon7)
 ### Summarize and plot data for whole brain
 
 ``` r
-wholebrain_perm = joined %>% 
+wholebrain = joined %>% 
     mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
     filter(Name %in% EOI) %>%
-    group_by(Epoch,Name) %>%
-    bootstraps(times=nboot)
-
-wholebrain_err = map_dfr(wholebrain_perm$splits,
-    function(x) {
-        as_tibble(x) %>% 
-        group_by(Epoch,Name) %>%
-        summarize(MeanExp = mean(Expression)) %>% 
-        pivot_wider(names_from=Name,values_from = MeanExp) %>%
-        rename("exon7" = UBE3A_chr15_25620611_25620910, "exon6" = UBE3A_chr15_25650607_25650653, "exon5" = UBE3A_chr15_25652213_25652284, "exon4" = UBE3A_chr15_25653766_25653795, "exon3" = UBE3A_chr15_25654234_25654354) %>%
-        mutate(
+    mutate(Name = str_replace_all(Name,"UBE3A_chr15_25620611_25620910","exon7")) %>%
+    mutate(Name = str_replace_all(Name,"UBE3A_chr15_25650607_25650653","exon6")) %>%
+    mutate(Name = str_replace_all(Name,"UBE3A_chr15_25652213_25652284","exon5")) %>%
+    mutate(Name = str_replace_all(Name,"UBE3A_chr15_25653766_25653795","exon4")) %>%
+    mutate(Name = str_replace_all(Name,"UBE3A_chr15_25654234_25654354","exon3")) %>%
+    select(Name,Expression,Epoch,structure_acronym,donor_id) %>%
+    pivot_wider(names_from=Name,values_from=Expression) %>%
+    mutate(
             Ratio3_long2 = case_when(
                 exon3 <= exon6 ~ (0.322*exon3)/exon6,
                 T ~ NA_real_
@@ -247,40 +235,11 @@ wholebrain_err = map_dfr(wholebrain_perm$splits,
                 T ~ NA_real_
             )
         ) %>%
-        select(Epoch,starts_with("Ratio")) %>%
-        pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))      
-    }) %>%
-    group_by(Epoch,Category) %>%
-    summarize(ratio.q025 = quantile(Ratio,0.025,na.rm=T), ratio.q975 = quantile(Ratio,0.975,na.rm=T))
-
-wholebrain_obs = joined %>% 
-    mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
-    group_by(Epoch,Name) %>% 
-    summarize(MeanExp = mean(Expression)) %>% 
-    filter(Name %in% EOI) %>%
-    pivot_wider(names_from=Name,values_from = MeanExp) %>%
-    rename("exon7" = UBE3A_chr15_25620611_25620910, "exon6" = UBE3A_chr15_25650607_25650653, "exon5" = UBE3A_chr15_25652213_25652284, "exon4" = UBE3A_chr15_25653766_25653795, "exon3" = UBE3A_chr15_25654234_25654354) %>%
-    mutate(
-        Ratio3_long2 = case_when(
-            exon3 <= exon6 ~ (0.322*exon3)/exon6,
-            T ~ NA_real_
-            ), 
-        Ratio2_long1 = case_when(
-            exon4 <= exon6 ~ (0.071*exon4)/exon6,
-            T ~ NA_real_
-        ), 
-        Ratio1_short = case_when(
-            exon3 <= exon6 & exon4 <= exon6 ~ ((exon6 - ((0.071*exon4) + (0.322*exon3)))/exon6),
-            T ~ NA_real_
-        )
-    ) %>%
     select(Epoch,starts_with("Ratio")) %>%
-    pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))
-
-wholebrain = full_join(wholebrain_obs,wholebrain_err) %>%
+    pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio")) %>%
     ggplot(aes(x=Epoch,y=Ratio,fill=Category)) + 
-    geom_col(position=dodge) +          # Take away position parameter to default to stacked bars
-    geom_errorbar(aes(ymin=ratio.q025,ymax=ratio.q975),width=0.2,position=dodge) +  
+    geom_boxplot(position=dodge,na.rm=T,outlier.shape = NA) +           # Take away position parameter to default to stacked bars
+    geom_jitter(position=position_jitterdodge(dodge.width=0.9,jitter.width = 0.1),aes(fill=Category,alpha=0.0001),pch=21,color="black",size=0.5,na.rm=T) +
     scale_x_discrete(limits = epoch_order) + 
     theme_classic() + 
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
@@ -291,26 +250,21 @@ wholebrain = full_join(wholebrain_obs,wholebrain_err) %>%
     scale_fill_manual("legend", values = c("Ratio1_short" = "#9A2C06", "Ratio2_long1" = "#2A9A06", "Ratio3_long2" = "#06749A"))
 ```
 
-    ## Joining, by = c("Epoch", "Category")
-
 ### Summarize and plot data for Hippocampus
 
 ``` r
-hip_perm = joined %>% 
+hip = joined %>% 
     filter(structure_acronym=="HIP") %>%
     mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
     filter(Name %in% EOI) %>%
-    group_by(Epoch,Name) %>%
-    bootstraps(times=nboot)
-
-hip_err = map_dfr(hip_perm$splits,
-    function(x) {
-        as_tibble(x) %>% 
-        group_by(Epoch,Name) %>%
-        summarize(MeanExp = mean(Expression)) %>% 
-        pivot_wider(names_from=Name,values_from = MeanExp) %>%
-        rename("exon7" = UBE3A_chr15_25620611_25620910, "exon6" = UBE3A_chr15_25650607_25650653, "exon5" = UBE3A_chr15_25652213_25652284, "exon4" = UBE3A_chr15_25653766_25653795, "exon3" = UBE3A_chr15_25654234_25654354) %>%
-        mutate(
+    mutate(Name = str_replace_all(Name,"UBE3A_chr15_25620611_25620910","exon7")) %>%
+    mutate(Name = str_replace_all(Name,"UBE3A_chr15_25650607_25650653","exon6")) %>%
+    mutate(Name = str_replace_all(Name,"UBE3A_chr15_25652213_25652284","exon5")) %>%
+    mutate(Name = str_replace_all(Name,"UBE3A_chr15_25653766_25653795","exon4")) %>%
+    mutate(Name = str_replace_all(Name,"UBE3A_chr15_25654234_25654354","exon3")) %>%
+    select(Name,Expression,Epoch,structure_acronym,donor_id) %>%
+    pivot_wider(names_from=Name,values_from=Expression) %>%
+    mutate(
             Ratio3_long2 = case_when(
                 exon3 <= exon6 ~ (0.322*exon3)/exon6,
                 T ~ NA_real_
@@ -324,41 +278,11 @@ hip_err = map_dfr(hip_perm$splits,
                 T ~ NA_real_
             )
         ) %>%
-        select(Epoch,starts_with("Ratio")) %>%
-        pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))      
-    }) %>%
-    group_by(Epoch,Category) %>%
-    summarize(ratio.q025 = quantile(Ratio,0.025,na.rm=T), ratio.q975 = quantile(Ratio,0.975,na.rm=T))
-
-hip_obs = joined %>% 
-    filter(structure_acronym=="HIP") %>%
-    mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
-    group_by(Epoch,Name) %>% 
-    summarize(MeanExp = mean(Expression)) %>% 
-    filter(Name %in% EOI) %>%
-    pivot_wider(names_from=Name,values_from = MeanExp) %>%
-    rename("exon7" = UBE3A_chr15_25620611_25620910, "exon6" = UBE3A_chr15_25650607_25650653, "exon5" = UBE3A_chr15_25652213_25652284, "exon4" = UBE3A_chr15_25653766_25653795, "exon3" = UBE3A_chr15_25654234_25654354) %>%
-    mutate(
-        Ratio3_long2 = case_when(
-            exon3 <= exon6 ~ (0.322*exon3)/exon6,
-            T ~ NA_real_
-            ), 
-        Ratio2_long1 = case_when(
-            exon4 <= exon6 ~ (0.071*exon4)/exon6,
-            T ~ NA_real_
-        ), 
-        Ratio1_short = case_when(
-            exon3 <= exon6 & exon4 <= exon6 ~ ((exon6 - ((0.071*exon4) + (0.322*exon3)))/exon6),
-            T ~ NA_real_
-        )
-    ) %>%
     select(Epoch,starts_with("Ratio")) %>%
-    pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))
-
-hip = full_join(hip_obs,hip_err) %>%
+    pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio")) %>%
     ggplot(aes(x=Epoch,y=Ratio,fill=Category)) + 
-    geom_col(position=dodge) +          # Take away position parameter to default to stacked bars
-    geom_errorbar(aes(ymin=ratio.q025,ymax=ratio.q975),width=0.2,position=dodge) +  
+    geom_boxplot(position=dodge,na.rm=T,outlier.shape = NA) +           # Take away position parameter to default to stacked bars
+    geom_jitter(position=position_jitterdodge(dodge.width=0.9,jitter.width = 0.1),aes(fill=Category,alpha=0.0001),pch=21,color="black",size=0.5,na.rm=T) +
     scale_x_discrete(limits = epoch_order) + 
     theme_classic() + 
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
@@ -369,26 +293,21 @@ hip = full_join(hip_obs,hip_err) %>%
     scale_fill_manual("legend", values = c("Ratio1_short" = "#9A2C06", "Ratio2_long1" = "#2A9A06", "Ratio3_long2" = "#06749A"))
 ```
 
-    ## Joining, by = c("Epoch", "Category")
-
 ### Summarize and plot data for Prefrontal cortex
 
 ``` r
-pfc_perm = joined %>% 
+pfc = joined %>% 
     filter(structure_acronym=="DFC" | structure_acronym=="VFC" | structure_acronym=="MFC" | structure_acronym=="OFC") %>%
     mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
     filter(Name %in% EOI) %>%
-    group_by(Epoch,Name) %>%
-    bootstraps(times=nboot)
-
-pfc_err = map_dfr(pfc_perm$splits,
-    function(x) {
-        as_tibble(x) %>% 
-        group_by(Epoch,Name) %>%
-        summarize(MeanExp = mean(Expression)) %>% 
-        pivot_wider(names_from=Name,values_from = MeanExp) %>%
-        rename("exon7" = UBE3A_chr15_25620611_25620910, "exon6" = UBE3A_chr15_25650607_25650653, "exon5" = UBE3A_chr15_25652213_25652284, "exon4" = UBE3A_chr15_25653766_25653795, "exon3" = UBE3A_chr15_25654234_25654354) %>%
-        mutate(
+    mutate(Name = str_replace_all(Name,"UBE3A_chr15_25620611_25620910","exon7")) %>%
+    mutate(Name = str_replace_all(Name,"UBE3A_chr15_25650607_25650653","exon6")) %>%
+    mutate(Name = str_replace_all(Name,"UBE3A_chr15_25652213_25652284","exon5")) %>%
+    mutate(Name = str_replace_all(Name,"UBE3A_chr15_25653766_25653795","exon4")) %>%
+    mutate(Name = str_replace_all(Name,"UBE3A_chr15_25654234_25654354","exon3")) %>%
+    select(Name,Expression,Epoch,structure_acronym,donor_id) %>%
+    pivot_wider(names_from=Name,values_from=Expression) %>%
+    mutate(
             Ratio3_long2 = case_when(
                 exon3 <= exon6 ~ (0.322*exon3)/exon6,
                 T ~ NA_real_
@@ -402,41 +321,11 @@ pfc_err = map_dfr(pfc_perm$splits,
                 T ~ NA_real_
             )
         ) %>%
-        select(Epoch,starts_with("Ratio")) %>%
-        pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))      
-    }) %>%
-    group_by(Epoch,Category) %>%
-    summarize(ratio.q025 = quantile(Ratio,0.025,na.rm=T), ratio.q975 = quantile(Ratio,0.975,na.rm=T))
-
-pfc_obs = joined %>% 
-    filter(structure_acronym=="DFC" | structure_acronym=="VFC" | structure_acronym=="MFC" | structure_acronym=="OFC") %>%
-    mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
-    group_by(Epoch,Name) %>% 
-    summarize(MeanExp = mean(Expression)) %>% 
-    filter(Name %in% EOI) %>%
-    pivot_wider(names_from=Name,values_from = MeanExp) %>%
-    rename("exon7" = UBE3A_chr15_25620611_25620910, "exon6" = UBE3A_chr15_25650607_25650653, "exon5" = UBE3A_chr15_25652213_25652284, "exon4" = UBE3A_chr15_25653766_25653795, "exon3" = UBE3A_chr15_25654234_25654354) %>%
-    mutate(
-        Ratio3_long2 = case_when(
-            exon3 <= exon6 ~ (0.322*exon3)/exon6,
-            T ~ NA_real_
-            ), 
-        Ratio2_long1 = case_when(
-            exon4 <= exon6 ~ (0.071*exon4)/exon6,
-            T ~ NA_real_
-        ), 
-        Ratio1_short = case_when(
-            exon3 <= exon6 & exon4 <= exon6 ~ ((exon6 - ((0.071*exon4) + (0.322*exon3)))/exon6),
-            T ~ NA_real_
-        )
-    ) %>%
     select(Epoch,starts_with("Ratio")) %>%
-    pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))
-
-pfc = full_join(pfc_obs,pfc_err) %>%
+    pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio")) %>%
     ggplot(aes(x=Epoch,y=Ratio,fill=Category)) + 
-    geom_col(position=dodge) +          # Take away position parameter to default to stacked bars
-    geom_errorbar(aes(ymin=ratio.q025,ymax=ratio.q975),width=0.2,position=dodge) +  
+    geom_boxplot(position=dodge,na.rm=T,outlier.shape = NA) +           # Take away position parameter to default to stacked bars
+    geom_jitter(position=position_jitterdodge(dodge.width=0.9,jitter.width = 0.1),aes(fill=Category,alpha=0.0001),pch=21,color="black",size=0.5,na.rm=T) +
     scale_x_discrete(limits = epoch_order) + 
     theme_classic() + 
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
@@ -447,26 +336,21 @@ pfc = full_join(pfc_obs,pfc_err) %>%
     scale_fill_manual("legend", values = c("Ratio1_short" = "#9A2C06", "Ratio2_long1" = "#2A9A06", "Ratio3_long2" = "#06749A"))
 ```
 
-    ## Joining, by = c("Epoch", "Category")
-
 ### Summarize and plot data for Sensory cortex
 
 ``` r
-sensory_perm = joined %>% 
+sensory = joined %>% 
     filter(structure_acronym=="S1C" | structure_acronym=="A1C" | structure_acronym=="M1C" | structure_acronym=="M1C-S1C") %>%
     mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
     filter(Name %in% EOI) %>%
-    group_by(Epoch,Name) %>%
-    bootstraps(times=nboot)
-
-sensory_err = map_dfr(sensory_perm$splits,
-    function(x) {
-        as_tibble(x) %>% 
-        group_by(Epoch,Name) %>%
-        summarize(MeanExp = mean(Expression)) %>% 
-        pivot_wider(names_from=Name,values_from = MeanExp) %>%
-        rename("exon7" = UBE3A_chr15_25620611_25620910, "exon6" = UBE3A_chr15_25650607_25650653, "exon5" = UBE3A_chr15_25652213_25652284, "exon4" = UBE3A_chr15_25653766_25653795, "exon3" = UBE3A_chr15_25654234_25654354) %>%
-        mutate(
+    mutate(Name = str_replace_all(Name,"UBE3A_chr15_25620611_25620910","exon7")) %>%
+    mutate(Name = str_replace_all(Name,"UBE3A_chr15_25650607_25650653","exon6")) %>%
+    mutate(Name = str_replace_all(Name,"UBE3A_chr15_25652213_25652284","exon5")) %>%
+    mutate(Name = str_replace_all(Name,"UBE3A_chr15_25653766_25653795","exon4")) %>%
+    mutate(Name = str_replace_all(Name,"UBE3A_chr15_25654234_25654354","exon3")) %>%
+    select(Name,Expression,Epoch,structure_acronym,donor_id) %>%
+    pivot_wider(names_from=Name,values_from=Expression) %>%
+    mutate(
             Ratio3_long2 = case_when(
                 exon3 <= exon6 ~ (0.322*exon3)/exon6,
                 T ~ NA_real_
@@ -480,41 +364,11 @@ sensory_err = map_dfr(sensory_perm$splits,
                 T ~ NA_real_
             )
         ) %>%
-        select(Epoch,starts_with("Ratio")) %>%
-        pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))      
-    }) %>%
-    group_by(Epoch,Category) %>%
-    summarize(ratio.q025 = quantile(Ratio,0.025,na.rm=T), ratio.q975 = quantile(Ratio,0.975,na.rm=T))
-
-sensory_obs = joined %>% 
-    filter(structure_acronym=="S1C" | structure_acronym=="A1C" | structure_acronym=="M1C" | structure_acronym=="M1C-S1C") %>%
-    mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
-    group_by(Epoch,Name) %>% 
-    summarize(MeanExp = mean(Expression)) %>% 
-    filter(Name %in% EOI) %>%
-    pivot_wider(names_from=Name,values_from = MeanExp) %>%
-    rename("exon7" = UBE3A_chr15_25620611_25620910, "exon6" = UBE3A_chr15_25650607_25650653, "exon5" = UBE3A_chr15_25652213_25652284, "exon4" = UBE3A_chr15_25653766_25653795, "exon3" = UBE3A_chr15_25654234_25654354) %>%
-    mutate(
-        Ratio3_long2 = case_when(
-            exon3 <= exon6 ~ (0.322*exon3)/exon6,
-            T ~ NA_real_
-            ), 
-        Ratio2_long1 = case_when(
-            exon4 <= exon6 ~ (0.071*exon4)/exon6,
-            T ~ NA_real_
-        ), 
-        Ratio1_short = case_when(
-            exon3 <= exon6 & exon4 <= exon6 ~ ((exon6 - ((0.071*exon4) + (0.322*exon3)))/exon6),
-            T ~ NA_real_
-        )
-    ) %>%
     select(Epoch,starts_with("Ratio")) %>%
-    pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))
-
-sensory = full_join(sensory_obs,sensory_err) %>%
+    pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio")) %>%
     ggplot(aes(x=Epoch,y=Ratio,fill=Category)) + 
-    geom_col(position=dodge) +          # Take away position parameter to default to stacked bars
-    geom_errorbar(aes(ymin=ratio.q025,ymax=ratio.q975),width=0.2,position=dodge) +  
+    geom_boxplot(position=dodge,na.rm=T,outlier.shape = NA) +           # Take away position parameter to default to stacked bars
+    geom_jitter(position=position_jitterdodge(dodge.width=0.9,jitter.width = 0.1),aes(fill=Category,alpha=0.0001),pch=21,color="black",size=0.5,na.rm=T) +
     scale_x_discrete(limits = epoch_order) + 
     theme_classic() + 
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
@@ -525,26 +379,21 @@ sensory = full_join(sensory_obs,sensory_err) %>%
     scale_fill_manual("legend", values = c("Ratio1_short" = "#9A2C06", "Ratio2_long1" = "#2A9A06", "Ratio3_long2" = "#06749A"))
 ```
 
-    ## Joining, by = c("Epoch", "Category")
-
 ### Summarize and plot data for Cerebellum
 
 ``` r
-cbm_perm = joined %>% 
+cbm = joined %>% 
     filter(structure_acronym=="CB" | structure_acronym=="CBC") %>%
     mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
     filter(Name %in% EOI) %>%
-    group_by(Epoch,Name) %>%
-    bootstraps(times=nboot)
-
-cbm_err = map_dfr(cbm_perm$splits,
-    function(x) {
-        as_tibble(x) %>% 
-        group_by(Epoch,Name) %>%
-        summarize(MeanExp = mean(Expression)) %>% 
-        pivot_wider(names_from=Name,values_from = MeanExp) %>%
-        rename("exon7" = UBE3A_chr15_25620611_25620910, "exon6" = UBE3A_chr15_25650607_25650653, "exon5" = UBE3A_chr15_25652213_25652284, "exon4" = UBE3A_chr15_25653766_25653795, "exon3" = UBE3A_chr15_25654234_25654354) %>%
-        mutate(
+    mutate(Name = str_replace_all(Name,"UBE3A_chr15_25620611_25620910","exon7")) %>%
+    mutate(Name = str_replace_all(Name,"UBE3A_chr15_25650607_25650653","exon6")) %>%
+    mutate(Name = str_replace_all(Name,"UBE3A_chr15_25652213_25652284","exon5")) %>%
+    mutate(Name = str_replace_all(Name,"UBE3A_chr15_25653766_25653795","exon4")) %>%
+    mutate(Name = str_replace_all(Name,"UBE3A_chr15_25654234_25654354","exon3")) %>%
+    select(Name,Expression,Epoch,structure_acronym,donor_id) %>%
+    pivot_wider(names_from=Name,values_from=Expression) %>%
+    mutate(
             Ratio3_long2 = case_when(
                 exon3 <= exon6 ~ (0.322*exon3)/exon6,
                 T ~ NA_real_
@@ -558,41 +407,11 @@ cbm_err = map_dfr(cbm_perm$splits,
                 T ~ NA_real_
             )
         ) %>%
-        select(Epoch,starts_with("Ratio")) %>%
-        pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))      
-    }) %>%
-    group_by(Epoch,Category) %>%
-    summarize(ratio.q025 = quantile(Ratio,0.025,na.rm=T), ratio.q975 = quantile(Ratio,0.975,na.rm=T))
-
-cbm_obs = joined %>% 
-    filter(structure_acronym=="CB" | structure_acronym=="CBC") %>%
-    mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
-    group_by(Epoch,Name) %>% 
-    summarize(MeanExp = mean(Expression)) %>% 
-    filter(Name %in% EOI) %>%
-    pivot_wider(names_from=Name,values_from = MeanExp) %>%
-    rename("exon7" = UBE3A_chr15_25620611_25620910, "exon6" = UBE3A_chr15_25650607_25650653, "exon5" = UBE3A_chr15_25652213_25652284, "exon4" = UBE3A_chr15_25653766_25653795, "exon3" = UBE3A_chr15_25654234_25654354) %>%
-    mutate(
-        Ratio3_long2 = case_when(
-            exon3 <= exon6 ~ (0.322*exon3)/exon6,
-            T ~ NA_real_
-            ), 
-        Ratio2_long1 = case_when(
-            exon4 <= exon6 ~ (0.071*exon4)/exon6,
-            T ~ NA_real_
-        ), 
-        Ratio1_short = case_when(
-            exon3 <= exon6 & exon4 <= exon6 ~ ((exon6 - ((0.071*exon4) + (0.322*exon3)))/exon6),
-            T ~ NA_real_
-        )
-    ) %>%
     select(Epoch,starts_with("Ratio")) %>%
-    pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))
-
-cbm = full_join(cbm_obs,cbm_err) %>%
+    pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio")) %>%
     ggplot(aes(x=Epoch,y=Ratio,fill=Category)) + 
-    geom_col(position=dodge) +          # Take away position parameter to default to stacked bars
-    geom_errorbar(aes(ymin=ratio.q025,ymax=ratio.q975),width=0.2,position=dodge) +  
+    geom_boxplot(position=dodge,na.rm=T,outlier.shape = NA) +           # Take away position parameter to default to stacked bars
+    geom_jitter(position=position_jitterdodge(dodge.width=0.9,jitter.width = 0.1),aes(fill=Category,alpha=0.0001),pch=21,color="black",size=0.5,na.rm=T) +
     scale_x_discrete(limits = epoch_order) + 
     theme_classic() + 
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
@@ -603,26 +422,21 @@ cbm = full_join(cbm_obs,cbm_err) %>%
     scale_fill_manual("legend", values = c("Ratio1_short" = "#9A2C06", "Ratio2_long1" = "#2A9A06", "Ratio3_long2" = "#06749A"))
 ```
 
-    ## Joining, by = c("Epoch", "Category")
-
 ### Summarize and plot data for Thalamus
 
 ``` r
-thalamus_perm = joined %>% 
+thalamus = joined %>% 
     filter(structure_acronym=="DTH" | structure_acronym=="MD") %>%
     mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
     filter(Name %in% EOI) %>%
-    group_by(Epoch,Name) %>%
-    bootstraps(times=nboot)
-
-thalamus_err = map_dfr(thalamus_perm$splits,
-    function(x) {
-        as_tibble(x) %>% 
-        group_by(Epoch,Name) %>%
-        summarize(MeanExp = mean(Expression)) %>% 
-        pivot_wider(names_from=Name,values_from = MeanExp) %>%
-        rename("exon7" = UBE3A_chr15_25620611_25620910, "exon6" = UBE3A_chr15_25650607_25650653, "exon5" = UBE3A_chr15_25652213_25652284, "exon4" = UBE3A_chr15_25653766_25653795, "exon3" = UBE3A_chr15_25654234_25654354) %>%
-        mutate(
+    mutate(Name = str_replace_all(Name,"UBE3A_chr15_25620611_25620910","exon7")) %>%
+    mutate(Name = str_replace_all(Name,"UBE3A_chr15_25650607_25650653","exon6")) %>%
+    mutate(Name = str_replace_all(Name,"UBE3A_chr15_25652213_25652284","exon5")) %>%
+    mutate(Name = str_replace_all(Name,"UBE3A_chr15_25653766_25653795","exon4")) %>%
+    mutate(Name = str_replace_all(Name,"UBE3A_chr15_25654234_25654354","exon3")) %>%
+    select(Name,Expression,Epoch,structure_acronym,donor_id) %>%
+    pivot_wider(names_from=Name,values_from=Expression) %>%
+    mutate(
             Ratio3_long2 = case_when(
                 exon3 <= exon6 ~ (0.322*exon3)/exon6,
                 T ~ NA_real_
@@ -636,41 +450,11 @@ thalamus_err = map_dfr(thalamus_perm$splits,
                 T ~ NA_real_
             )
         ) %>%
-        select(Epoch,starts_with("Ratio")) %>%
-        pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))      
-    }) %>%
-    group_by(Epoch,Category) %>%
-    summarize(ratio.q025 = quantile(Ratio,0.025,na.rm=T), ratio.q975 = quantile(Ratio,0.975,na.rm=T))
-
-thalamus_obs = joined %>% 
-    filter(structure_acronym=="DTH" | structure_acronym=="MD") %>%
-    mutate(Epoch = fct_relevel(Epoch,epoch_order)) %>%
-    group_by(Epoch,Name) %>% 
-    summarize(MeanExp = mean(Expression)) %>% 
-    filter(Name %in% EOI) %>%
-    pivot_wider(names_from=Name,values_from = MeanExp) %>%
-    rename("exon7" = UBE3A_chr15_25620611_25620910, "exon6" = UBE3A_chr15_25650607_25650653, "exon5" = UBE3A_chr15_25652213_25652284, "exon4" = UBE3A_chr15_25653766_25653795, "exon3" = UBE3A_chr15_25654234_25654354) %>%
-    mutate(
-        Ratio3_long2 = case_when(
-            exon3 <= exon6 ~ (0.322*exon3)/exon6,
-            T ~ NA_real_
-            ), 
-        Ratio2_long1 = case_when(
-            exon4 <= exon6 ~ (0.071*exon4)/exon6,
-            T ~ NA_real_
-        ), 
-        Ratio1_short = case_when(
-            exon3 <= exon6 & exon4 <= exon6 ~ ((exon6 - ((0.071*exon4) + (0.322*exon3)))/exon6),
-            T ~ NA_real_
-        )
-    ) %>%
     select(Epoch,starts_with("Ratio")) %>%
-    pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio"))
-
-thalamus = full_join(thalamus_obs,thalamus_err) %>%
+    pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio")) %>%
     ggplot(aes(x=Epoch,y=Ratio,fill=Category)) + 
-    geom_col(position=dodge) +          # Take away position parameter to default to stacked bars
-    geom_errorbar(aes(ymin=ratio.q025,ymax=ratio.q975),width=0.2,position=dodge) +  
+    geom_boxplot(position=dodge,na.rm=T,outlier.shape = NA) +           # Take away position parameter to default to stacked bars
+    geom_jitter(position=position_jitterdodge(dodge.width=0.9,jitter.width = 0.1),aes(fill=Category,alpha=0.0001),pch=21,color="black",size=0.5,na.rm=T) +
     scale_x_discrete(limits = epoch_order) + 
     theme_classic() + 
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
@@ -681,21 +465,13 @@ thalamus = full_join(thalamus_obs,thalamus_err) %>%
     scale_fill_manual("legend", values = c("Ratio1_short" = "#9A2C06", "Ratio2_long1" = "#2A9A06", "Ratio3_long2" = "#06749A"))
 ```
 
-    ## Joining, by = c("Epoch", "Category")
-
 ### Write out all summary plots to one figure using patchwork
 
 ``` r
 (hip+pfc+sensory)/(cbm+thalamus+wholebrain)
 ```
 
-    ## Warning: Removed 2 rows containing missing values (geom_col).
-
 ![](./Figures/Fig1-1.png)<!-- -->
-
-``` r
-# Note thalamus has two NA ratios in the early childhood epoch
-```
 
 ### Plot all individual brain regions and timepoints as boxplots for supplementary material
 
@@ -723,7 +499,7 @@ left = joined %>%
     pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio")) %>%
     filter(structure_acronym == "A1C" | structure_acronym == "AMY" | structure_acronym == "CBC" | structure_acronym == "DFC" | structure_acronym == "HIP" | structure_acronym == "IPC" | structure_acronym == "ITC" | structure_acronym == "M1C" | structure_acronym == "MD" | structure_acronym == "MFC" | structure_acronym == "OFC" | structure_acronym == "S1C" | structure_acronym == "STC" | structure_acronym == "STR" | structure_acronym == "V1C" | structure_acronym == "VFC") %>%
     ggplot(aes(x=age,y=Ratio,fill=Category)) + 
-    geom_boxplot(aes(color=Category),position=position_dodge(width=0.9,preserve="single")) + 
+    geom_boxplot(aes(color=Category),position=position_dodge(width=0.9,preserve="single"),na.rm=T,outlier.shape = NA) + 
     facet_wrap(~structure_acronym,nrow=8,ncol=2,as.table=T, strip.position = "top",scales="free_x") + 
     theme_classic() + 
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),legend.position = "none",strip.background = element_blank(), strip.placement = NULL,axis.line.x = element_line(colour = 'black', size=1, linetype='solid'),panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
@@ -756,7 +532,7 @@ right = joined %>%
     pivot_longer(names_to="Category",values_to="Ratio",cols=contains("Ratio")) %>%
     filter(structure_acronym == "CB" | structure_acronym == "CGE" | structure_acronym == "DTH" | structure_acronym == "LGE" | structure_acronym == "M1C-S1C" | structure_acronym == "MGE" | structure_acronym == "Ocx" | structure_acronym == "PCx" | structure_acronym == "TCx" | structure_acronym == "URL") %>%
     ggplot(aes(x=age,y=Ratio,fill=Category)) + 
-    geom_boxplot(aes(color=Category),position=position_dodge(width=0.9,preserve="single")) + 
+    geom_boxplot(aes(color=Category),position=position_dodge(width=0.9,preserve="single"),na.rm=T,outlier.shape = NA) + 
     facet_wrap(~structure_acronym,nrow=5,ncol=2,as.table=T, strip.position = "top",scales="free_x") + 
     theme_classic() + 
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),strip.background = element_blank(), strip.placement = NULL,axis.line.x = element_line(colour = 'black', size=1, linetype='solid'),panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
@@ -778,8 +554,6 @@ AAAAAAABB
 "
 left + right + plot_layout(design=layout,heights=c(1,0.8244),guides = 'collect')
 ```
-
-    ## Warning: Removed 183 rows containing non-finite values (stat_boxplot).
 
 ![](./Figures/Fig2-1.png)<!-- -->
 
@@ -900,17 +674,15 @@ dev = counts %>%
     pivot_longer(names_to="Isoform",values_to="Fraction",cols=c(ShortFraction,LongFraction)) %>%
     mutate(Isoform=str_replace_all(Isoform,"Fraction","")) %>%
     mutate(Isoform=fct_relevel(Isoform,c("Short","Long"))) %>%
-    group_by(Age,Tissue,Isoform) %>%
-    summarize(Mean=mean(Fraction),SD=sd(Fraction)) %>%
     filter(Tissue=="hindbrain" | Tissue=="forebrain" | Tissue=="midbrain") %>%
-    ggplot(aes(x=Age,y=Mean,fill=Isoform)) +
-    geom_col(position=dodge) +
-    geom_errorbar(aes(ymin = Mean-SD, ymax = Mean+SD),width=0.25,position=dodge) +
+    ggplot(aes(x=Age,y=Fraction,fill=Isoform)) +
+    geom_boxplot(position=dodge,na.rm=T,outlier.shape=NA) +
+    geom_jitter(position=position_jitterdodge(dodge.width=0.9,jitter.width = 0.1),aes(fill=Isoform,alpha=0.0001),pch=21,color="black",size=0.5,na.rm=T) +
     facet_wrap(~Tissue) +
     theme_classic() +
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
     ylim(0,1) +
-    ylab("Isoform fraction") +
+    ylab("Fraction Ube3a isoform") +
     scale_fill_manual("legend", values = c("Short" = "#9A2C06", "Long" = "#06749A"))
 ```
 
@@ -936,17 +708,15 @@ adult = counts %>%
     pivot_longer(names_to="Isoform",values_to="Fraction",cols=c(ShortFraction,LongFraction)) %>%
     mutate(Isoform=str_replace_all(Isoform,"Fraction","")) %>%
     mutate(Isoform=fct_relevel(Isoform,c("Short","Long"))) %>%
-    group_by(Age,Tissue,Isoform) %>%
-    summarize(Mean=mean(Fraction),SD=sd(Fraction)) %>%
     filter(Tissue=="cerebellum" | Tissue=="corticalplate" | Tissue=="frontalcortex") %>%
-    ggplot(aes(x=Age,y=Mean,fill=Isoform)) +
-    geom_col(position=dodge) +
-    geom_errorbar(aes(ymin = Mean-SD, ymax = Mean+SD),width=0.25,position=dodge) +
+    ggplot(aes(x=Age,y=Fraction,fill=Isoform)) +
+    geom_boxplot(position=dodge,na.rm=T,outlier.shape=NA) +
+    geom_jitter(position=position_jitterdodge(dodge.width=0.9,jitter.width = 0.1),aes(fill=Isoform,alpha=0.0001),pch=21,color="black",size=0.5,na.rm=T) +
     facet_wrap(~Tissue) +
     theme_classic() +
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
     ylim(0,1) +
-    ylab("Isoform fraction") +
+    ylab("Fraction Ube3a isoform") +
     scale_fill_manual("legend", values = c("Short" = "#9A2C06", "Long" = "#06749A"))
 ```
 
