@@ -1,8 +1,9 @@
 
-## Judson et al. 2021 (in preparation)
+## Judson et al. 2021 
 
 This repository contains `R` code to generate some of the figures
-presented in Judson *et al.* 2021 (*in preparation*).
+presented in Judson *et al.* 2021, published in _JCI Insight_ here:
+https://insight.jci.org/articles/view/144712
 
 We used publicly available RNA-seq data in mouse and human to
 demonstrate that the short isoform of UBE3A is expressed preferentially
